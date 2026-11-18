@@ -150,6 +150,8 @@ class Application:
         self._solve_announced = False
         self._guide_index = 0
         self._last_frame: np.ndarray | None = None
+        self._previous_face: Face | None = None
+        self._scan_face_started = time.monotonic()
         self._playback = TurnPlayback()
         self._guide_states: tuple[CubeModel, ...] = ()
         self._viewpoint = 0
@@ -351,12 +353,14 @@ class Application:
             return
 
         face = self.current_face
+        self._previous_face = face
         palette = [color for color in colors if color is not None]
         self.model.set_face_colors(face, palette)
         self._scan_index += 1
         if self._scan_index >= len(SCAN_SEQUENCE):
             self._start_validation()
         else:
+            self._scan_face_started = time.monotonic()
             center = self.model.center(face)
             color_name = center.name_es if center is not None else "desconocido"
             self._set_message(
@@ -473,6 +477,8 @@ class Application:
         self._guide_index = 0
         self._guide_states = ()
         self._guide_message = ""
+        self._previous_face = None
+        self._scan_face_started = time.monotonic()
         self._playback.restart()
         if self.demo:
             self.load_demo()
@@ -535,6 +541,11 @@ class Application:
                 message=message,
                 level=level,
                 mask=self.detector.build_color_mask(frame) if self.renderer.show_mask else None,
+                orientation_face=self.current_face,
+                orientation_progress=min(
+                    1.0, max(0.0, (time.monotonic() - self._scan_face_started) / 1.6)
+                ),
+                previous_face=self._previous_face,
             )
             return self.renderer.draw_scanning(frame, scan_view)
 
@@ -656,6 +667,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="profundidad de busqueda de Kociemba (20-24 recomendado)",
     )
     parser.add_argument(
+        "--threads",
+        type=int,
+        default=1,
+        help="hilos de OpenCV para filtros (1 evita sobrecarga; 0 usa todos)",
+    )
+    parser.add_argument(
         "--debug-mask",
         action="store_true",
         help="muestra la mascara HSV para calibrar los colores",
@@ -698,6 +715,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if not 10 <= args.max_depth <= MAX_DEPTH_LIMIT:
         print(f"Error: --max-depth debe estar entre 10 y {MAX_DEPTH_LIMIT}", file=sys.stderr)
         return 2
+    if args.threads < 0:
+        print("Error: --threads no puede ser negativo", file=sys.stderr)
+        return 2
+    with contextlib.suppress(cv2.error):
+        cv2.setNumThreads(args.threads)
 
     try:
         config = CameraConfig(

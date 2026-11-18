@@ -351,9 +351,7 @@ class TestErrorHandling:
         assert application.state is AppState.ERROR
 
         capture.available = False
-        shown = application.process(
-            model_frame(CubeModel.solved(), Face.U), KeyAction.RESET
-        )
+        shown = application.process(model_frame(CubeModel.solved(), Face.U), KeyAction.RESET)
         assert application.state is AppState.ERROR
         assert shown.shape == FRAME_SHAPE
 
@@ -371,6 +369,9 @@ class TestCommandLine:
         assert args.roi is None
         assert args.debug_mask is False
         assert args.probe_camera is False
+        assert args.threads == 1
+        assert args.backend == "auto"
+        assert args.demo is False
 
     def test_roi_is_parsed_as_fractions(self) -> None:
         args = build_parser().parse_args(["--roi", "0.1,0.2,0.5,0.6"])
@@ -393,6 +394,7 @@ class TestCommandLine:
     def test_camera_configuration_errors_are_reported(self) -> None:
         assert main(["--width", "0"]) == 2
         assert main(["--fps", "0"]) == 2
+        assert main(["--threads", "-1"]) == 2
 
     def test_gui_failure_is_reported(
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]

@@ -295,8 +295,7 @@ class ColorDetector:
                     high = entry.upper[channel]
                     if not 0 <= low <= high <= maximum:
                         raise DetectorError(
-                            f"Rango invalido de {name} para {color.name_es}: "
-                            f"[{low}, {high}]"
+                            f"Rango invalido de {name} para {color.name_es}: [{low}, {high}]"
                         )
             normalized[color] = entries
         return normalized
@@ -319,9 +318,7 @@ class ColorDetector:
         side = int(min(height, width) * self.grid_ratio)
         side -= side % GRID_SIZE
         if side < GRID_SIZE * 9:
-            raise DetectorError(
-                "El fotograma es demasiado pequeno para la cuadricula de escaneo"
-            )
+            raise DetectorError("El fotograma es demasiado pequeno para la cuadricula de escaneo")
         return Rect((width - side) // 2, (height - side) // 2, side, side)
 
     def cell_rects(self, frame_shape: Sequence[int]) -> tuple[Rect, ...]:
@@ -428,9 +425,7 @@ class ColorDetector:
         runner_up = sorted(scores.values(), reverse=True)[1]
         if best_score - runner_up < 0.03:
             candidates = [color for color, score in scores.items() if score >= best_score - 0.03]
-            best_color = min(
-                candidates, key=lambda color: self._hue_distance(median_hsv, color)
-            )
+            best_color = min(candidates, key=lambda color: self._hue_distance(median_hsv, color))
 
         if best_score < self.min_confidence:
             return None, best_score, coverage, median_hsv

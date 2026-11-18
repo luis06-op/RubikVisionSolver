@@ -172,9 +172,7 @@ class RubikSolver:
             SolverError: Si ``max_depth`` está fuera del rango admitido.
         """
         if not 10 <= max_depth <= 30:
-            raise SolverError(
-                "max_depth debe estar entre 10 y 30 para que la busqueda sea viable"
-            )
+            raise SolverError("max_depth debe estar entre 10 y 30 para que la busqueda sea viable")
         self.max_depth = max_depth
 
     def solve(self, cube: CubeModel | str) -> Solution:
@@ -230,19 +228,14 @@ class RubikSolver:
 
         normalized = cube.strip().upper().replace("\u2019", "'")
         if len(normalized) != 54:
-            raise InvalidCubeError(
-                "La cadena del cubo debe tener 54 caracteres URFDLB"
-            )
+            raise InvalidCubeError("La cadena del cubo debe tener 54 caracteres URFDLB")
         if set(normalized) - set("URFDLB"):
             raise InvalidCubeError("La cadena del cubo contiene caracteres no validos")
         centers = tuple(normalized[face * 9 + 4] for face in range(6))
         if centers != ("U", "R", "F", "D", "L", "B"):
-            raise InvalidCubeError(
-                "Los centros de la cadena no son U, R, F, D, L y B en ese orden"
-            )
+            raise InvalidCubeError("Los centros de la cadena no son U, R, F, D, L y B en ese orden")
         return normalized, all(
-            normalized[face * 9 : face * 9 + 9] == normalized[face * 9 + 4] * 9
-            for face in range(6)
+            normalized[face * 9 : face * 9 + 9] == normalized[face * 9 + 4] * 9 for face in range(6)
         )
 
     def _run_backend(self, cubestring: str) -> str:
@@ -263,8 +256,7 @@ class RubikSolver:
             import kociemba  # Importación diferida: la app arranca sin la dependencia.
         except ImportError as error:  # pragma: no cover - depende del entorno
             raise SolverUnavailableError(
-                "La libreria 'kociemba' no esta instalada. "
-                "Ejecuta: pip install -r requirements.txt"
+                "La libreria 'kociemba' no esta instalada. Ejecuta: pip install -r requirements.txt"
             ) from error
 
         try:
@@ -311,6 +303,5 @@ def describe_sequence(moves: Sequence[Move]) -> tuple[str, ...]:
         Una frase por movimiento, numerada.
     """
     return tuple(
-        f"{index}. {move.notation}: {move.description}"
-        for index, move in enumerate(moves, start=1)
+        f"{index}. {move.notation}: {move.description}" for index, move in enumerate(moves, start=1)
     )

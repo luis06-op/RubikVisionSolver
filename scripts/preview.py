@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 from pathlib import Path
 
 import cv2
@@ -64,6 +65,10 @@ def main() -> None:
     for face in SCAN_ORDER[:3]:
         app.process(source(face), KeyAction.CAPTURE)
     save("scanning", app.process(source(Face.R)))
+    for index, progress in enumerate((0.0, 0.34, 0.67, 1.0)):
+        app._scan_face_started = time.monotonic() - progress * 1.6
+        save(f"scan_rotate_{index}", app.process(source(Face.R)))
+    app._scan_face_started = time.monotonic()
     save("mask", app.process(source(Face.R), KeyAction.TOGGLE_MASK))
     app.process(source(Face.R), KeyAction.TOGGLE_MASK)
     for face in SCAN_ORDER[3:]:
@@ -84,13 +89,22 @@ def main() -> None:
     )
     for frame_number, progress in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
         view = GuidingView(
-            solution=view.solution, index=0, up_color=view.up_color,
-            front_color=view.front_color, cube=view.cube, progress=progress,
+            solution=view.solution,
+            index=0,
+            up_color=view.up_color,
+            front_color=view.front_color,
+            cube=view.cube,
+            progress=progress,
         )
         save(f"anim_{frame_number}", renderer.draw_guiding(source(Face.F).copy(), view))
     view = GuidingView(
-        solution=view.solution, index=0, up_color=view.up_color,
-        front_color=view.front_color, cube=view.cube, progress=0.5, viewpoint=3,
+        solution=view.solution,
+        index=0,
+        up_color=view.up_color,
+        front_color=view.front_color,
+        cube=view.cube,
+        progress=0.5,
+        viewpoint=3,
     )
     save("view_back", renderer.draw_guiding(source(Face.F).copy(), view))
     assert VIEW_NAMES[view.viewpoint] == "Detras"

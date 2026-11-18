@@ -256,11 +256,7 @@ def _matmul(
 ) -> tuple[Point, Point, Point]:
     """Multiplica dos matrices 3x3 enteras."""
     return tuple(  # type: ignore[return-value]
-        tuple(
-            sum(left[i][k] * right[k][j] for k in range(3))
-            for j in range(3)
-        )
-        for i in range(3)
+        tuple(sum(left[i][k] * right[k][j] for k in range(3)) for j in range(3)) for i in range(3)
     )
 
 
@@ -324,9 +320,7 @@ def _build_move_permutations() -> dict[tuple[Face, int], tuple[int, ...]]:
 
 
 _FACELET_LOOKUP: Final[dict[tuple[Point, Point], Facelet]] = _build_facelet_lookup()
-_MOVE_PERMUTATIONS: Final[dict[tuple[Face, int], tuple[int, ...]]] = (
-    _build_move_permutations()
-)
+_MOVE_PERMUTATIONS: Final[dict[tuple[Face, int], tuple[int, ...]]] = _build_move_permutations()
 
 _MOVE_PATTERN: Final[re.Pattern[str]] = re.compile(
     r"^(?P<face>[URFDLB])(?P<suffix>['’2]?)$"  # noqa: RUF001 - comilla tipográfica
@@ -494,8 +488,7 @@ _CORNER_SIGNATURES: Final[dict[frozenset[Face], int]] = {
     for index, slot in enumerate(_CORNERS)
 }
 _EDGE_SIGNATURES: Final[dict[frozenset[Face], int]] = {
-    frozenset(facelet.face for facelet in slot.facelets): index
-    for index, slot in enumerate(_EDGES)
+    frozenset(facelet.face for facelet in slot.facelets): index for index, slot in enumerate(_EDGES)
 }
 
 
@@ -669,10 +662,7 @@ class CubeModel:
             grid: list[list[Sticker]] = []
             for row in range(3):
                 grid.append(
-                    [
-                        _DEFAULT_SCHEME[Face(normalized[offset + row * 3 + col])]
-                        for col in range(3)
-                    ]
+                    [_DEFAULT_SCHEME[Face(normalized[offset + row * 3 + col])] for col in range(3)]
                 )
             model._stickers[face] = grid
         return model
@@ -680,9 +670,7 @@ class CubeModel:
     def copy(self) -> CubeModel:
         """Devuelve una copia independiente del modelo."""
         clone = CubeModel()
-        clone._stickers = {
-            face: [row[:] for row in grid] for face, grid in self._stickers.items()
-        }
+        clone._stickers = {face: [row[:] for row in grid] for face, grid in self._stickers.items()}
         return clone
 
     # -- Acceso a las caras ------------------------------------------------
@@ -704,8 +692,7 @@ class CubeModel:
             for color in row:
                 if not isinstance(color, Color):
                     raise CubeStateError(
-                        "Las pegatinas deben ser instancias de Color, "
-                        f"no {color!r}"
+                        f"Las pegatinas deben ser instancias de Color, no {color!r}"
                     )
         self._stickers[face] = [[Color(cell) for cell in row] for row in grid]
 
@@ -771,9 +758,7 @@ class CubeModel:
         for face in FACES:
             color = self.center(face)
             if color is None:
-                raise CubeStateError(
-                    f"Falta el centro de la cara {_FACE_LETTER_ES[face]}"
-                )
+                raise CubeStateError(f"Falta el centro de la cara {_FACE_LETTER_ES[face]}")
             if color in mapping:
                 raise CubeStateError(
                     "Dos caras tienen el mismo color en el centro: "
@@ -920,9 +905,7 @@ class CubeModel:
                         continue
                     facelets[Facelet(face, row, col)] = color_faces[color]
 
-        structural, corner_perm, edge_perm, twists, flips = self._inspect_cubies(
-            facelets
-        )
+        structural, corner_perm, edge_perm, twists, flips = self._inspect_cubies(facelets)
         issues.extend(structural)
         if issues:
             return ValidationReport(tuple(issues))
@@ -996,8 +979,7 @@ class CubeModel:
                 issues.append(
                     ValidationIssue(
                         "duplicado",
-                        "La esquina "
-                        f"{self._describe_faces(signature)} aparece mas de una vez",
+                        f"La esquina {self._describe_faces(signature)} aparece mas de una vez",
                     )
                 )
                 continue
@@ -1021,8 +1003,7 @@ class CubeModel:
                 issues.append(
                     ValidationIssue(
                         "duplicado",
-                        "La arista "
-                        f"{self._describe_faces(signature)} aparece mas de una vez",
+                        f"La arista {self._describe_faces(signature)} aparece mas de una vez",
                     )
                 )
                 continue

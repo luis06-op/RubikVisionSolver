@@ -222,6 +222,9 @@ class ScanView:
 
     level: MessageLevel = MessageLevel.INFO
     mask: np.ndarray | None = None
+    orientation_face: Face | None = None
+    orientation_progress: float = 1.0
+    previous_face: Face | None = None
 
 
 @dataclass(frozen=True)
@@ -323,6 +326,7 @@ class UIRenderer:
         self.show_mask = show_mask
         self._buttons: list[tuple[Rect, KeyAction]] = []
         self._animator = CubeAnimator()
+        self._scan_animator = CubeAnimator()
 
     def hit_test(self, x: int, y: int) -> KeyAction:
         """Acción bajo el cursor, en coordenadas de la imagen de HighGUI."""
@@ -1022,7 +1026,7 @@ class UIRenderer:
         if not view.cells:
             return
         scanned = dict(view.scanned)
-        row_height = layout.px(34)
+        row_height = layout.px(29)
         panel_width = layout.px(224)
         x = layout.width - layout.margin - panel_width
         grid = view.cells[0]
@@ -1103,35 +1107,78 @@ class UIRenderer:
         """Muestra calidad de lectura sin cubrir la cuadrícula de captura."""
         if not view.cells or view.cells[0].x < layout.px(232) + 2 * layout.margin:
             return
-        panel = Rect(layout.margin, view.cells[0].y, layout.px(224), layout.px(230))
-        self._panel(frame, panel, 0.96)
-        x, y = panel.x + layout.px(16), panel.y + layout.px(28)
+        available = layout.height - layout.px(158) - view.cells[0].y
+        if available < layout.px(200):
+            return
+        height = min(layout.px(360), available)
+        panel = Rect(layout.margin, view.cells[0].y, layout.px(224), height)
+        self._panel(frame, panel, 0.98)
+        x, y = panel.x + layout.px(14), panel.y + layout.px(22)
         self._put_text(frame, "LECTURA EN VIVO", (x, y), layout.font(0.42), _MUTED)
         ready = sum(sample.is_confident for sample in view.samples)
         self._put_text(
             frame,
             f"{ready} / 9",
-            (x, y + layout.px(52)),
+            (x, y + layout.px(48)),
             layout.font(1.1),
             _ACCENT if ready == 9 else _WARNING,
         )
         self._put_text(
-            frame, "celdas reconocidas", (x, y + layout.px(78)), layout.font(0.42), _MUTED
+            frame, "celdas reconocidas", (x, y + layout.px(72)), layout.font(0.42), _MUTED
         )
         self._progress_bar(
-            frame, Rect(x, y + layout.px(100), panel.width - layout.px(32), layout.px(5)), ready / 9
+            frame,
+            Rect(x, y + layout.px(92), panel.width - layout.px(28), layout.px(5)),
+            ready / 9,
         )
         self._draw_paragraph(
             frame,
             "Listo para capturar" if ready == 9 else "Ajusta la luz y el encuadre",
-            (x, y + layout.px(134)),
-            panel.width - layout.px(32),
+            (x, y + layout.px(116)),
+            panel.width - layout.px(28),
             layout.font(0.5),
             _TEXT,
             max_lines=2,
         )
+        divider_y = y + layout.px(150)
+        cv2.line(
+            frame,
+            (panel.x + layout.px(10), divider_y),
+            (panel.x2 - layout.px(10), divider_y),
+            _BORDER,
+            1,
+        )
         self._put_text(
-            frame, "ESPACIO  Guardar cara", (x, panel.y2 - layout.px(18)), layout.font(0.4), _ACCENT
+            frame, "COMO GIRAR EL CUBO", (x, divider_y + layout.px(20)), layout.font(0.42), _ACCENT
+        )
+        if view.orientation_face is None:
+            return
+        picture = Rect(
+            panel.x + layout.px(7),
+            divider_y + layout.px(28),
+            panel.width - layout.px(14),
+            panel.y2 - divider_y - layout.px(76),
+        )
+        if picture.width > 8 and picture.height > 8:
+            frame[picture.as_slice()] = self._scan_animator.render_orientation(
+                view.orientation_face, view.orientation_progress, picture.width, picture.height
+            )
+        target = view.orientation_face.value
+        if view.previous_face is not None and view.previous_face is not view.orientation_face:
+            target = f"{view.previous_face.value} -> {target}"
+        caption = (
+            "Lista: pulsa ESPACIO"
+            if view.orientation_progress >= 1
+            else f"Gira hasta ver la cara {target}"
+        )
+        self._draw_paragraph(
+            frame,
+            caption,
+            (x, panel.y2 - layout.px(26)),
+            panel.width - layout.px(28),
+            layout.font(0.42),
+            _TEXT,
+            max_lines=2,
         )
 
     def _draw_footer(

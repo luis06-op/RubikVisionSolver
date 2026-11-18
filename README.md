@@ -41,7 +41,7 @@ nueve celdas, orientación de referencia y una instrucción por movimiento.
 
 <table>
   <tr>
-    <td width="50%"><strong>01 · Escanea con confianza</strong><br /><br /><img src="docs/assets/scanning.png" alt="Escaneo: nueve celdas reconocidas, lista de caras y controles" /></td>
+    <td width="50%"><strong>01 · Escanea con confianza</strong><br /><br /><img src="docs/assets/scanning.png" alt="Escaneo: lectura de celdas, animación de giro y controles" /></td>
     <td width="50%"><strong>02 · Comprueba tu cubo</strong><br /><br /><img src="docs/assets/validation.png" alt="Validación: desarrollo plano de las seis caras y orientación del cubo" /></td>
   </tr>
   <tr>
@@ -69,6 +69,16 @@ La animación usa la geometría del modelo y los colores leídos en el escaneo.
 Cada fotograma se genera con NumPy y OpenCV, sin GPU ni dependencias extra; las
 poses se calculan una vez y se reutilizan mientras el giro está pausado.
 
+Durante el escaneo, el panel izquierdo muestra otro cubo 3D que gira desde la
+cara anterior hasta la que se pide ahora:
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/scan_rotate_0.png" alt="Antes de girar: Frente -> Derecha" /></td>
+    <td width="50%"><img src="docs/assets/scan_rotate_2.png" alt="A mitad del giro hacia la cara derecha" /></td>
+  </tr>
+</table>
+
 ---
 
 ## Características
@@ -91,6 +101,9 @@ poses se calculan una vez y se reutilizan mientras el giro está pausado.
   delante y hacia atrás.
 - Diagnóstico de iluminación en pantalla y vista de depuración de la máscara
   HSV para calibrar colores.
+- **Guía de orientación durante el escaneo**: al pedir cada cara se anima un
+  cubo 3D que gira desde la posición anterior hasta la nueva, con la cara
+  objetivo resaltada. Así sabes cómo colocar el cubo antes de capturar colores.
 - **Demostración 3D animada** de cada giro: se resalta la capa que se mueve y
   se pueden elegir cinco ángulos de cámara. La animación no avanza el paso:
   lo confirmas tú con ESPACIO o con un botón.
@@ -188,12 +201,16 @@ puede abrir la ventana de vídeo.
   pero tu usuario debe pertenecer al grupo `video` si `/dev/video*` no es
   legible. Wayland nativo puede no informar del cierre de la ventana; `Q` cierra
   siempre la aplicación.
-- **Windows:** el backend preferido es `DirectShow`, con `Media Foundation` como
-  alternativa. `kociemba` no publica ruedas para Windows: `pip` compila la
-  extensión C, así que necesitas las **Herramientas de compilación de Visual
-  Studio** (carga de trabajo «Desarrollo de escritorio con C++»). Si no se
-  instala el acelerador nativo, avisamos en pantalla. El resto de dependencias
-  sí tiene ruedas para Windows, incluido Python 3.14.
+- **Windows:** lánzalo desde el Explorador de archivos con
+  `scripts\run_windows.bat`: crea el entorno, instala lo que falte y abre la
+  cámara con `DirectShow`; si falla, prueba automáticamente con
+  `Media Foundation`. El backend preferido es DirectShow. `kociemba` no publica
+  ruedas para Windows: `pip` compila la extensión C, así que necesitas las
+  **Herramientas de compilación de Visual Studio** (carga de trabajo
+  «Desarrollo de escritorio con C++»). Si no se instala el acelerador nativo,
+  avisamos en pantalla. El resto de dependencias sí tiene ruedas para Windows,
+  incluido Python 3.14. El lanzador usa un solo hilo de OpenCV para evitar la
+  sobrecarga de hilos típica en Windows; cámbialo con `--threads 0` si lo deseas.
 
 Comprobación rápida de la cámara:
 
@@ -278,6 +295,7 @@ python -m src.main --demo
 | `--roi X,Y,W,H` | fotograma completo | Región de interés en fracciones (0–1). Útil para recortar la zona donde se coloca el cubo. |
 | `--max-depth` | `24` | Profundidad de la primera fase de Kociemba (10–30). Más profundidad explora soluciones más cortas a costa de tiempo. |
 | `--backend` | `auto` | Controlador de vídeo: `auto`, `dshow`/`msmf` (Windows) o `v4l2` (Linux). |
+| `--threads` | `1` | Hilos de OpenCV; `0` usa todos los disponibles. |
 | `--demo` | desactivado | Guía 3D con un cubo sintético, sin abrir la cámara. |
 | `--debug-mask` | desactivado | Arranca con la máscara HSV visible. |
 | `--probe-camera` | — | Abre la cámara, imprime la resolución real y sale. |
@@ -405,7 +423,8 @@ RubikVisionSolver/
 │   └── ci.yml             # Ubuntu + Windows
 ├── scripts/
 │   ├── benchmark.py       # medición reproducible sin cámara
-│   └── preview.py         # exportación de capturas sintéticas
+│   ├── preview.py         # exportación de capturas sintéticas
+│   └── run_windows.bat    # lanzador con instalación y fallback de backend
 ├── docs/
 │   ├── assets/           # banner, tarjetas SVG y capturas de la interfaz
 │   ├── performance.md    # mediciones y alcance del benchmark

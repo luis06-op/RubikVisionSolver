@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from src.animation import CubeAnimator, TurnPlayback, effective_view, turn_pose
+from src.animation import (
+    CubeAnimator,
+    TurnPlayback,
+    effective_view,
+    scan_pose,
+    turn_pose,
+)
 from src.cube_state import CubeModel, Face, iter_facelets
 from src.solver import Move
 
@@ -23,8 +29,9 @@ def test_animation_endpoint_matches_logical_move(face: Face, suffix: str, quarte
         key = tuple(np.rint(position).astype(int)), tuple(np.rint(normal).astype(int))
         destination = lookup[key]
         destinations.add(destination)
-        assert cube.face(original.face)[original.row][original.col] == (
-            after.face(destination.face)[destination.row][destination.col]
+        assert (
+            cube.face(original.face)[original.row][original.col]
+            == (after.face(destination.face)[destination.row][destination.col])
         )
     assert len(destinations) == 54
 
@@ -60,6 +67,25 @@ def test_pause_speed_and_replay_are_time_based() -> None:
 @pytest.mark.parametrize("face,view", [(Face.B, 3), (Face.L, 2), (Face.D, 4)])
 def test_hidden_faces_get_visible_camera_angles(face: Face, view: int) -> None:
     assert effective_view(face, 0) == view
+
+
+@pytest.mark.parametrize("face", list(Face))
+def test_scan_orientation_ends_with_requested_face_toward_camera(face: Face) -> None:
+    _, normals, _ = scan_pose(face, 1.0)
+    front = normals @ np.array((0, 0, 1))
+    assert np.count_nonzero(front > 0.99) == 9
+    _, middle, _ = scan_pose(face, 0.5)
+    if face not in (Face.F,):
+        assert not np.allclose(middle, normals)
+
+
+def test_scan_orientation_render_is_cached_and_colourful() -> None:
+    renderer = CubeAnimator()
+    first = renderer.render_orientation(Face.L, 0.5, 200, 140)
+    assert renderer.render_orientation(Face.L, 0.5, 200, 140) is first
+    assert first.shape == (140, 200, 3)
+    assert first.max() > first.min()
+    assert not first.flags.writeable
 
 
 def test_renderer_reuses_paused_image_without_mutating_cube() -> None:

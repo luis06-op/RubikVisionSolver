@@ -263,9 +263,7 @@ class TestValidator:
         positions = [(row, col) for row in range(3) for col in range(3)]
         first = positions[0]
         second = next(
-            (row, col)
-            for row, col in positions
-            if grid[row][col] is not grid[first[0]][first[1]]
+            (row, col) for row, col in positions if grid[row][col] is not grid[first[0]][first[1]]
         )
         swap_stickers(
             cube,

@@ -25,6 +25,15 @@ _COLORS = {
     Color.BLUE: (230, 88, 40),
     Color.GREEN: (62, 196, 62),
 }
+#: Colores de un cubo estándar con U blanca y F verde, para la guía de escaneo.
+_SOLVED_COLOR: dict[Face, Color] = {
+    Face.U: Color.WHITE,
+    Face.R: Color.RED,
+    Face.F: Color.GREEN,
+    Face.D: Color.YELLOW,
+    Face.L: Color.ORANGE,
+    Face.B: Color.BLUE,
+}
 VIEW_NAMES = ("Automatico", "Frente / derecha", "Frente / izquierda", "Detras", "Desde abajo")
 _VIEWS = ((6, 5, 8), (6, 5, 8), (-6, 5, 8), (-6, 5, -8), (6, -5, 8))
 
@@ -139,11 +148,90 @@ def _project(move: Move, step: int, view: int) -> tuple[np.ndarray, np.ndarray, 
     return projected, visible, order
 
 
+#: Eje y ángulo para llevar cada cara delante de la cámara desde la inicial
+#: (frontal arriba). Coinciden con las instrucciones físicas del escaneo.
+SCAN_ROTATIONS: dict[Face, tuple[tuple[int, int, int], float]] = {
+    Face.U: ((1, 0, 0), math.pi / 2),
+    Face.D: ((1, 0, 0), -math.pi / 2),
+    Face.L: ((0, 1, 0), math.pi / 2),
+    Face.R: ((0, 1, 0), -math.pi / 2),
+    Face.F: ((0, 1, 0), 0.0),
+    Face.B: ((0, 1, 0), math.pi),
+}
+
+
+def scan_pose(face: Face, progress: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Gira el cubo completo para presentar ``face`` a la cámara."""
+    positions, normals, vertices = (array.copy() for array in _geometry())
+    axis, total = SCAN_ROTATIONS[face]
+    unit = np.asarray(axis, dtype=np.float64)
+    angle = total * min(1.0, max(0.0, progress))
+    c, s = math.cos(angle), math.sin(angle)
+    x, y, z = unit
+    cross = np.array(((0, -z, y), (z, 0, -x), (-y, x, 0)))
+    rotation = c * np.eye(3) + s * cross + (1 - c) * np.outer(unit, unit)
+    for array in (positions, normals, vertices):
+        array[:] = array @ rotation.T
+    return positions, normals, vertices
+
+
+@lru_cache(maxsize=64)
+def _project_scan(face: Face, step: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Proyección cacheada de la guía de orientación del escaneo."""
+    _, normals, vertices = scan_pose(face, step / 40)
+    camera = np.asarray((6, 5, 8), dtype=np.float64)
+    camera /= np.linalg.norm(camera)
+    right = np.cross((0, 1, 0), camera)
+    right /= np.linalg.norm(right)
+    up = np.cross(camera, right)
+    projected = vertices @ np.stack((right, -up, camera)).T
+    return projected, normals @ camera > 0.01, np.argsort(projected[:, :, 2].mean(axis=1))
+
+
 def effective_view(face: Face, view: int) -> int:
     """Elige una vista que permita ver la capa posterior, izquierda o inferior."""
     if view:
         return view % len(VIEW_NAMES)
     return {Face.L: 2, Face.B: 3, Face.D: 4}.get(face, 1)
+
+
+def _paint(
+    colors: tuple[object, ...],
+    projected: np.ndarray,
+    visible: np.ndarray,
+    order: np.ndarray,
+    highlight: np.ndarray,
+    width: int,
+    height: int,
+) -> np.ndarray:
+    """Dibuja las 54 pegatinas visibles con el resaltado indicado."""
+    image = np.full((height, width, 3), (43, 32, 25), dtype=np.uint8)
+    scale = min(width, height) / 5.4
+    polygons = np.rint(projected[:, :, :2] * scale + (width / 2, height / 2)).astype(np.int32)
+    for index in order:
+        if not visible[index]:
+            continue
+        color = _COLORS.get(colors[index], (90, 90, 90))
+        cv2.fillConvexPoly(image, polygons[index], color, cv2.LINE_AA)
+        border = (193, 232, 91) if highlight[index] else (18, 18, 18)
+        cv2.polylines(image, [polygons[index]], True, border, 2, cv2.LINE_AA)
+        if index % 9 == 4:
+            center = np.rint(polygons[index].mean(axis=0)).astype(int)
+            label = tuple(Face)[index // 9].value
+            font_scale = max(0.35, min(width, height) / 650)
+            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, font_scale, 1)
+            cv2.putText(
+                image,
+                label,
+                (int(center[0] - tw // 2), int(center[1] + th // 2)),
+                cv2.FONT_HERSHEY_DUPLEX,
+                font_scale,
+                (15, 15, 15),
+                2,
+                cv2.LINE_AA,
+            )
+    image.flags.writeable = False
+    return image
 
 
 class CubeAnimator:
@@ -153,50 +241,43 @@ class CubeAnimator:
         self._key: tuple[object, ...] | None = None
         self._image: np.ndarray | None = None
 
+    def _cached(self, key: tuple[object, ...], draw: Callable[[], np.ndarray]) -> np.ndarray:
+        if key == self._key and self._image is not None:
+            return self._image
+        image = draw()
+        self._key, self._image = key, image
+        return image
+
     def render(
         self, cube: CubeModel, move: Move, progress: float, width: int, height: int, view: int = 0
     ) -> np.ndarray:
-        """Dibuja el estado anterior al paso con la capa activa resaltada.
-
-        Returns:
-            Imagen BGR de solo lectura; el llamante puede copiarla al lienzo.
-        """
+        """Dibuja el estado anterior al paso con la capa activa resaltada."""
         colors = tuple(cube.face(s.face)[s.row][s.col] for s in iter_facelets())
         step = round(min(1.0, max(0.0, progress)) * 60)
         viewpoint = effective_view(move.face, view)
-        key = (colors, move, step, width, height, viewpoint)
-        if key == self._key and self._image is not None:
-            return self._image
-        image = np.full((height, width, 3), (43, 32, 25), dtype=np.uint8)
+        key = ("move", colors, move, step, width, height, viewpoint)
         projected, visible, order = _project(move, step, viewpoint)
-        scale = min(width, height) / 5.4
-        polygons = np.rint(projected[:, :, :2] * scale + (width / 2, height / 2)).astype(np.int32)
         positions, _, _ = _geometry()
-        axis = np.asarray(Facelet(move.face, 1, 1).normal)
-        moving = positions @ axis > 0.5
-        for index in order:
-            if not visible[index]:
-                continue
-            color = _COLORS.get(colors[index], (90, 90, 90))
-            cv2.fillConvexPoly(image, polygons[index], color, cv2.LINE_AA)
-            border = (193, 232, 91) if moving[index] else (18, 18, 18)
-            cv2.polylines(image, [polygons[index]], True, border, 2, cv2.LINE_AA)
-            if index % 9 == 4:
-                center = np.rint(polygons[index].mean(axis=0)).astype(int)
-                label = tuple(Face)[index // 9].value
-                font_scale = max(0.35, min(width, height) / 650)
-                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_DUPLEX, font_scale, 1)
-                at = (int(center[0] - tw // 2), int(center[1] + th // 2))
-                cv2.putText(
-                    image,
-                    label,
-                    at,
-                    cv2.FONT_HERSHEY_DUPLEX,
-                    font_scale,
-                    (15, 15, 15),
-                    2,
-                    cv2.LINE_AA,
-                )
-        image.flags.writeable = False
-        self._key, self._image = key, image
-        return image
+        moving = positions @ np.asarray(Facelet(move.face, 1, 1).normal) > 0.5
+        return self._cached(
+            key, lambda: _paint(colors, projected, visible, order, moving, width, height)
+        )
+
+    def render_orientation(
+        self,
+        face: Face,
+        progress: float,
+        width: int,
+        height: int,
+    ) -> np.ndarray:
+        """Muestra cómo girar el cubo para poner ``face`` frente a la cámara."""
+        step = round(min(1.0, max(0.0, progress)) * 40)
+        key = ("scan", face, step, width, height)
+        projected, visible, order = _project_scan(face, step)
+        positions, _, _ = scan_pose(face, step / 40)
+        front = Facelet(face, 1, 1).normal
+        highlight = positions @ np.asarray(front) > 0.5
+        colors = tuple(_SOLVED_COLOR[f] for f in tuple(Face) for _ in range(9))
+        return self._cached(
+            key, lambda: _paint(colors, projected, visible, order, highlight, width, height)
+        )

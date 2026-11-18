@@ -11,8 +11,15 @@ from src.ui_renderer import KeyAction, parse_key
 from tests.test_application import build_application, guide, paint_frame, scramble
 
 
-@pytest.mark.parametrize("key,action", [("a", KeyAction.REPLAY), ("p", KeyAction.PAUSE),
-                                       ("s", KeyAction.SPEED), ("v", KeyAction.VIEW)])
+@pytest.mark.parametrize(
+    "key,action",
+    [
+        ("a", KeyAction.REPLAY),
+        ("p", KeyAction.PAUSE),
+        ("s", KeyAction.SPEED),
+        ("v", KeyAction.VIEW),
+    ],
+)
 def test_new_shortcuts_and_uppercase(key: str, action: KeyAction) -> None:
     assert parse_key(ord(key)) is action
     assert parse_key(ord(key.upper())) is action
@@ -40,8 +47,9 @@ def test_click_uses_current_buttons_and_ignores_double_click(
     app, _ = build_application()
     frame = paint_frame([Color.WHITE] * 9)
     app.process(frame)
-    x, y = next(rect.center for rect, action in app.renderer._buttons
-                if action is KeyAction.CAPTURE)
+    x, y = next(
+        rect.center for rect, action in app.renderer._buttons if action is KeyAction.CAPTURE
+    )
     monkeypatch.setattr("src.main.time.monotonic", lambda: 5.0)
     app._on_mouse(cv2.EVENT_LBUTTONUP, x, y, 0, None)
     assert app._mouse_action is KeyAction.CAPTURE

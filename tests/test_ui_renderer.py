@@ -157,6 +157,30 @@ class TestScreens:
         assert shown.any()
 
     @pytest.mark.parametrize("shape", RESOLUTIONS)
+    @pytest.mark.parametrize("face", [Face.U, Face.L, Face.B])
+    @pytest.mark.parametrize("progress", [0.0, 0.5, 1.0])
+    def test_scanning_shows_rotation_guide(
+        self, shape: tuple[int, int], face: Face, progress: float
+    ) -> None:
+        view = scan_view(shape)
+        guided = ScanView(
+            current_face=face,
+            instruction=view.instruction,
+            cells=view.cells,
+            samples=view.samples,
+            scanned=view.scanned,
+            message=view.message,
+            level=view.level,
+            mask=view.mask,
+            orientation_face=face,
+            orientation_progress=progress,
+            previous_face=Face.F,
+        )
+        shown = UIRenderer().draw_scanning(blank(shape), guided)
+        assert shown.shape == (shape[0], shape[1], 3)
+        assert shown.any()
+
+    @pytest.mark.parametrize("shape", RESOLUTIONS)
     def test_scanning_with_mask(self, shape: tuple[int, int]) -> None:
         renderer = UIRenderer(show_mask=True)
         shown = renderer.draw_scanning(blank(shape), scan_view(shape))
@@ -200,12 +224,15 @@ class TestScreens:
         view = guiding_view()
         assert view.solution.move_count > 1
         for index in (0, view.solution.move_count - 1):
-            shown = renderer.draw_guiding(blank(shape), GuidingView(
-                solution=view.solution,
-                index=index,
-                up_color=view.up_color,
-                front_color=view.front_color,
-            ))
+            shown = renderer.draw_guiding(
+                blank(shape),
+                GuidingView(
+                    solution=view.solution,
+                    index=index,
+                    up_color=view.up_color,
+                    front_color=view.front_color,
+                ),
+            )
             assert shown.shape == (shape[0], shape[1], 3)
 
     @pytest.mark.parametrize("shape", RESOLUTIONS)

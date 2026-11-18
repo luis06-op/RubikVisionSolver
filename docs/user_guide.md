@@ -63,6 +63,7 @@ Se abre una ventana con:
 - el vídeo de la cámara;
 - una **cuadrícula 3×3** en el centro;
 - un panel con el progreso de las seis caras;
+- un **cubo 3D animado** que gira desde la cara anterior hasta la que se pide;
 - el mensaje con la cara que debes mostrar.
 
 Para salir en cualquier momento, pulsa `Q` o `ESC`.
@@ -75,6 +76,12 @@ El programa pide las caras en un orden concreto. La clave es **no girar el cubo
 al revés**: la cara superior del cubo debe quedar siempre hacia arriba, salvo
 en las caras superior e inferior, donde se inclina el cubo hacia ti o hacia
 atrás.
+
+El cubo animado del panel izquierdo es tu referencia: reproduce con las manos
+el giro que ves hasta que la cara indicada quede de frente. La animación termina
+sola y no captura nada: pulsa **ESPACIO** cuando tu cubo esté listo y dentro de
+la cuadrícula. Si no sabes cómo llegar a una cara, mira también el mensaje
+inferior, que describe el giro físico.
 
 ### Cara 1: superior (`U`)
 

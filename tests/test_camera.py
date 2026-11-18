@@ -196,18 +196,14 @@ class TestLifecycle:
 
     def test_read_recovers_from_a_transient_failure(self) -> None:
         capture = FakeCapture([None, make_frame(9)])
-        handler = build_handler(
-            capture, warmup_frames=0, read_attempts=3, read_backoff=0.0
-        )
+        handler = build_handler(capture, warmup_frames=0, read_attempts=3, read_backoff=0.0)
         handler.open()
         assert handler.read().mean() == pytest.approx(9)
         handler.release()
 
     def test_read_applies_the_roi(self) -> None:
         capture = FakeCapture([make_frame()])
-        handler = build_handler(
-            capture, warmup_frames=0, roi=ROIConfig(0.25, 0.25, 0.5, 0.5)
-        )
+        handler = build_handler(capture, warmup_frames=0, roi=ROIConfig(0.25, 0.25, 0.5, 0.5))
         handler.open()
         assert handler.read().shape == (60, 80, 3)
         handler.release()

@@ -52,6 +52,23 @@ nueve celdas, orientación de referencia y una instrucción por movimiento.
 > Capturas del renderizador real con un cubo **sintético**; no son fotografías de
 > una webcam. Puedes regenerarlas sin cámara con `python -m scripts.preview`.
 
+### La demostración 3D
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/assets/anim_0.png" alt="Antes del giro L2: capa izquierda resaltada" /></td>
+    <td width="50%"><img src="docs/assets/anim_2.png" alt="A mitad del giro L2" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/anim_4.png" alt="Después del giro L2" /></td>
+    <td><img src="docs/assets/view_back.png" alt="Vista de la cara trasera durante la demostración" /></td>
+  </tr>
+</table>
+
+La animación usa la geometría del modelo y los colores leídos en el escaneo.
+Cada fotograma se genera con NumPy y OpenCV, sin GPU ni dependencias extra; las
+poses se calculan una vez y se reutilizan mientras el giro está pausado.
+
 ---
 
 ## Características
@@ -74,10 +91,18 @@ nueve celdas, orientación de referencia y una instrucción por movimiento.
   delante y hacia atrás.
 - Diagnóstico de iluminación en pantalla y vista de depuración de la máscara
   HSV para calibrar colores.
-- Interfaz azul oscuro con acentos menta/violeta, cámara visible durante la guía,
-  indicadores de lectura, flechas de giro y próximos movimientos.
-- Código tipado, sin dependencias de interfaz en la lógica y con máquina de
-  estados comprobable sin cámara.
+- **Demostración 3D animada** de cada giro: se resalta la capa que se mueve y
+  se pueden elegir cinco ángulos de cámara. La animación no avanza el paso:
+  lo confirmas tú con ESPACIO o con un botón.
+- **Interacción por clic y teclado**: botones grandes, pausa/repetición/ritmo,
+  vista de cámara en miniatura y navegación entre pasos.
+- **Cálculo en segundo plano** con cancelación: la ventana sigue respondiendo
+  mientras Kociemba busca la solución.
+- **Modo demostración sin cámara** (`--demo`) para aprender los controles.
+- Compatibilidad con **Linux y Windows**: selección automática de `V4L2`,
+  `DirectShow` y `Media Foundation`, con opción manual `--backend`.
+- Código tipado, sin dependencias de interfaz en la lógica, máquina de estados
+  comprobable sin cámara e integración continua en ambos sistemas.
 
 ---
 
@@ -105,11 +130,13 @@ nueve celdas, orientación de referencia y una instrucción por movimiento.
 
 | Módulo | Responsabilidad |
 |---|---|
-| `src/camera.py` | Abre `cv2.VideoCapture`, configura resolución/FPS, reintenta lecturas, aplica la ROI y libera el dispositivo de forma idempotente. |
+| `src/camera.py` | Abre `cv2.VideoCapture`, elige el backend nativo, configura resolución/FPS, reintenta lecturas, aplica la ROI y libera el dispositivo. |
 | `src/detector.py` | Clasifica las nueve celdas de la cuadrícula en HSV y mide la iluminación. No dibuja nada. |
 | `src/cube_state.py` | Modelo de las 54 pegatinas, movimientos, serialización a la cadena de Kociemba y validador de estados imposibles. |
+| `src/animation.py` | Geometría 3D y rasterizado de la demostración; usa los colores reales del cubo y solo gira la capa indicada. |
+| `src/solve_task.py` | Ejecuta Kociemba en un proceso aparte, con tiempo límite y cancelación. |
 | `src/solver.py` | Adapta `kociemba`, valida la entrada y convierte la respuesta en movimientos tipados con descripciones en español. |
-| `src/ui_renderer.py` | Dibuja todas las pantallas (escaneo, validación, espera, guía, fin y error) y traduce teclas a acciones. |
+| `src/ui_renderer.py` | Dibuja todas las pantallas, la animación, los botones y traduce teclas y clics a acciones. |
 | `src/main.py` | Máquina de estados, orquestación, CLI y bucle de vídeo. `Application.process()` es el punto de entrada sin ventana, usado por las pruebas. |
 
 Las dependencias apuntan siempre hacia el modelo: el detector y el renderizador
@@ -122,8 +149,8 @@ probar la lógica completa con fotogramas sintéticos.
 |---|---|---|
 | `SCANNING` | Se pide una cara por vez (`U → L → F → R → B → D`). ESPACIO captura la cuadrícula. | Al capturar la sexta cara. |
 | `VALIDATING` | Se muestra el desarrollo plano y el informe de validez. ESPACIO confirma. | A `SOLVING` si el cubo es válido. |
-| `SOLVING` | Se anuncia la espera en un fotograma y se calcula en el siguiente. | A `GUIDING` o `FINISHED`. |
-| `GUIDING` | Se muestra el movimiento actual y la instrucción física. | Al superar el último movimiento. |
+| `SOLVING` | Se calcula en un proceso aparte; la ventana sigue respondiendo y se puede cancelar. | A `GUIDING` o `FINISHED`. |
+| `GUIDING` | Animación 3D del giro, instrucción física y miniatura de la cámara. | Al superar el último movimiento. |
 | `FINISHED` | La secuencia está completada; comprueba tu cubo. `R` inicia otro escaneo. | — |
 | `ERROR` | Fallo de cámara o de imagen; `R` reintenta. | — |
 
@@ -154,6 +181,19 @@ pip install -r requirements.txt
 ruedas binarias distintas según la versión de Python. Instala siempre
 `opencv-python` (con GUI), **nunca** `opencv-python-headless`: esta última no
 puede abrir la ventana de vídeo.
+
+### Notas por sistema operativo
+
+- **Linux:** el backend preferido es `V4L2`. No suelen hacer falta permisos especiales,
+  pero tu usuario debe pertenecer al grupo `video` si `/dev/video*` no es
+  legible. Wayland nativo puede no informar del cierre de la ventana; `Q` cierra
+  siempre la aplicación.
+- **Windows:** el backend preferido es `DirectShow`, con `Media Foundation` como
+  alternativa. `kociemba` no publica ruedas para Windows: `pip` compila la
+  extensión C, así que necesitas las **Herramientas de compilación de Visual
+  Studio** (carga de trabajo «Desarrollo de escritorio con C++»). Si no se
+  instala el acelerador nativo, avisamos en pantalla. El resto de dependencias
+  sí tiene ruedas para Windows, incluido Python 3.14.
 
 Comprobación rápida de la cámara:
 
@@ -186,20 +226,32 @@ Si alguna celda no se reconoce, la aplicación lo indica y no avanza: ajusta la
 luz o el encuadre y vuelve a intentarlo. Al terminar las seis caras se muestra
 el desarrollo plano; revísalo y pulsa ESPACIO para resolver.
 
-La solución aparece como una secuencia de movimientos. Cada paso indica la cara
-y el sentido del giro; aplica el movimiento en el cubo y pulsa **ESPACIO** para
-marcarlo como hecho y pasar al siguiente. `ENTER`, `N` y `→` avanzan del mismo
-modo fuera del escaneo, y `B` retrocede en las instrucciones. Retroceder no
-deshace físicamente un giro: corrígelo en el cubo antes de repetir el paso.
+La solución aparece paso a paso con una **animación 3D** del movimiento: la capa
+que gira queda resaltada y el ángulo de la cámara cambia automáticamente cuando
+el giro afecta a la cara trasera, izquierda o inferior. El cubo dibujado es tu
+cubo escaneado antes de aplicar el paso, no uno genérico. Aplica el giro en tu
+cubo físico y pulsa **ESPACIO** para marcarlo como hecho.
+
+La animación se puede **pausar, repetir, acelerar y ver desde otro ángulo**;
+ninguno de esos controles confirma el paso. `B` retrocede en las instrucciones
+pero no deshace tu giro físico: corrige el cubo antes de repetir. Mientras se
+calcula la solución, la ventana sigue respondiendo y `R` cancela el cálculo.
+
+Todos los botones se pueden usar con el **ratón**; las teclas son alternativas
+rápidas para cuando tienes las manos ocupadas con el cubo.
 
 ### Teclas
 
 | Tecla | Acción |
 |---|---|
-| `ESPACIO` | Capturar la cara actual, confirmar el desarrollo o avanzar de movimiento. |
+| `ESPACIO` | Capturar la cara, confirmar el desarrollo o marcar el giro como hecho. |
 | `ENTER`, `N`, `→` | Confirmar / avanzar (equivalente a ESPACIO fuera del escaneo). |
 | `B`, `←` | Movimiento anterior durante la guía. |
-| `R` | Reiniciar el escaneo; en la pantalla de error, reintentar la cámara. |
+| `A` | Repetir la animación del giro actual. |
+| `P` | Pausar o reanudar la animación. |
+| `S` | Cambiar el ritmo de la animación (0,5× / 1× / 1,5×). |
+| `V` | Cambiar el ángulo de la demostración 3D. |
+| `R` | Reiniciar el escaneo; durante el cálculo lo cancela; en error reintenta la cámara. |
 | `M` | Mostrar u ocultar la máscara HSV de depuración. |
 | `Q`, `ESC` | Salir. |
 
@@ -211,7 +263,11 @@ python -m src.main \
   --width 1920 --height 1080 --fps 30 \
   --roi 0.1,0.1,0.8,0.8 \
   --max-depth 24 \
+  --backend auto \
   --debug-mask
+
+# Sin cámara: prueba la guía 3D y los controles con un cubo sintético.
+python -m src.main --demo
 ```
 
 | Opción | Valor por defecto | Descripción |
@@ -221,6 +277,8 @@ python -m src.main \
 | `--fps` | `30` | Fotogramas por segundo solicitados. |
 | `--roi X,Y,W,H` | fotograma completo | Región de interés en fracciones (0–1). Útil para recortar la zona donde se coloca el cubo. |
 | `--max-depth` | `24` | Profundidad de la primera fase de Kociemba (10–30). Más profundidad explora soluciones más cortas a costa de tiempo. |
+| `--backend` | `auto` | Controlador de vídeo: `auto`, `dshow`/`msmf` (Windows) o `v4l2` (Linux). |
+| `--demo` | desactivado | Guía 3D con un cubo sintético, sin abrir la cámara. |
 | `--debug-mask` | desactivado | Arranca con la máscara HSV visible. |
 | `--probe-camera` | — | Abre la cámara, imprime la resolución real y sale. |
 
@@ -287,8 +345,10 @@ mypy                   # tipado estricto de src/
 
 La suite cubre el detector con fotogramas sintéticos, la geometría y los
 invariantes del cubo, el adaptador de Kociemba, la captura con un dispositivo
-simulado y el flujo completo de la máquina de estados, incluidos los caminos de
-error.
+simulado, los 18 giros de la animación comparados con el modelo lógico, el
+solver en proceso aparte, los controles de ratón y teclado y el flujo completo
+de la máquina de estados, incluidos los caminos de error. GitHub Actions ejecuta
+la verificación en **Ubuntu y Windows**.
 
 ## Rendimiento
 
@@ -300,11 +360,14 @@ medidas de texto de la UI se reutilizan mediante cachés limitadas.
 El bucle descuenta el tiempo de captura y procesamiento de la espera entre
 fotogramas. También conserva la captura original para que el dibujo de la
 interfaz no contamine el siguiente análisis ni las pantallas de recuperación.
+La animación cuantiza el giro en 61 poses y memoriza cada imagen hasta que
+cambia el paso, la vista o el progreso. Kociemba se ejecuta en un proceso
+independiente para que la vídeo-vigilancia no se congele durante la búsqueda.
 
 ```bash
 python -m scripts.benchmark             # mediana y p95 a 480p, 720p y 1080p
 python -m scripts.benchmark --frames 300
-python -m scripts.preview              # exportar las siete pantallas sin webcam
+python -m scripts.preview              # exportar pantallas y fotogramas 3D sin webcam
 ```
 
 El benchmark usa imágenes sintéticas, diez iteraciones de calentamiento y un
@@ -319,20 +382,27 @@ hilo de OpenCV. Mide procesamiento; **no mide los FPS de la webcam**. Consulta
 RubikVisionSolver/
 ├── src/
 │   ├── __init__.py
-│   ├── main.py            # máquina de estados, CLI y bucle de vídeo
-│   ├── camera.py          # captura y ROI
+│   ├── main.py            # máquina de estados, CLI, ratón y bucle de vídeo
+│   ├── camera.py          # captura, backend y ROI
 │   ├── detector.py        # clasificación HSV de las nueve celdas
 │   ├── cube_state.py      # modelo, movimientos y validador
+│   ├── animation.py       # demostración 3D de los giros
+│   ├── solve_task.py      # solver en proceso aparte y cancelable
 │   ├── solver.py          # adaptador de Kociemba
-│   └── ui_renderer.py     # dibujo de todas las pantallas
+│   └── ui_renderer.py     # pantallas, animación y botones
 ├── tests/
+│   ├── test_animation.py
 │   ├── test_application.py
 │   ├── test_camera.py
 │   ├── test_cube_state.py
 │   ├── test_detector.py
+│   ├── test_interaction.py
 │   ├── test_optimizations.py
+│   ├── test_solve_task.py
 │   ├── test_ui_renderer.py
 │   └── test_solver.py
+├── .github/workflows/
+│   └── ci.yml             # Ubuntu + Windows
 ├── scripts/
 │   ├── benchmark.py       # medición reproducible sin cámara
 │   └── preview.py         # exportación de capturas sintéticas

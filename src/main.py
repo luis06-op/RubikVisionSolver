@@ -35,9 +35,11 @@ from typing import Final
 import cv2
 import numpy as np
 
+from .animation import VIEW_NAMES, TurnPlayback
 from .camera import CameraConfig, CameraError, CameraHandler, ROIConfig
 from .cube_state import SCAN_ORDER, CubeModel, Face, ValidationReport
 from .detector import ColorDetector, DetectorError, FaceletSample
+from .solve_task import SolveTask
 from .solver import RubikSolver, Solution, SolverError
 from .ui_renderer import (
     GuidingView,
@@ -77,10 +79,7 @@ SCAN_INSTRUCTIONS: Final[dict[Face, str]] = {
         "Gira el cubo sobre su eje vertical hasta que la cara IZQUIERDA mire a la "
         "cámara, manteniendo la cara superior hacia arriba"
     ),
-    Face.F: (
-        "Coloca la cara FRONTAL mirando a la cámara, con la cara superior hacia "
-        "arriba"
-    ),
+    Face.F: ("Coloca la cara FRONTAL mirando a la cámara, con la cara superior hacia arriba"),
     Face.R: (
         "Gira el cubo sobre su eje vertical hasta que la cara DERECHA mire a la "
         "cámara, manteniendo la cara superior hacia arriba"
@@ -119,6 +118,8 @@ class Application:
         detector: ColorDetector,
         renderer: UIRenderer,
         solver: RubikSolver,
+        *,
+        demo: bool = False,
     ) -> None:
         """Inicializa la aplicación.
 
@@ -132,6 +133,7 @@ class Application:
         self.detector = detector
         self.renderer = renderer
         self.solver = solver
+        self.demo = demo
 
         self.state = AppState.SCANNING
         self.model = CubeModel()
@@ -148,6 +150,32 @@ class Application:
         self._solve_announced = False
         self._guide_index = 0
         self._last_frame: np.ndarray | None = None
+        self._playback = TurnPlayback()
+        self._guide_states: tuple[CubeModel, ...] = ()
+        self._viewpoint = 0
+        self._guide_message = ""
+        self._mouse_action = KeyAction.NONE
+        self._last_click = -1.0
+        self._background_solver = False
+        self._task: SolveTask | None = None
+
+    def load_demo(self) -> None:
+        """Carga un cubo sintético para aprender los controles sin webcam."""
+        self.model = CubeModel.solved()
+        self.model.apply_algorithm("R U R' U' F2 D B L2")
+        self._scan_index = len(SCAN_SEQUENCE)
+        self._start_validation()
+
+    def _on_mouse(self, event: int, x: int, y: int, _flags: int, _param: object) -> None:
+        """Traduce clics de HighGUI; evita confirmar dos giros con doble clic."""
+        if event != cv2.EVENT_LBUTTONUP:
+            return
+        now = time.monotonic()
+        if now - self._last_click < 0.3:
+            return
+        self._mouse_action = self.renderer.hit_test(x, y)
+        if self._mouse_action is not KeyAction.NONE:
+            self._last_click = now
 
     # -- Propiedades -------------------------------------------------------
 
@@ -171,16 +199,19 @@ class Application:
             cv2.error: Si el entorno gráfico no permite abrir o actualizar la ventana.
         """
         pending = KeyAction.NONE
+        self._background_solver = True
         try:
-            self.camera.open()
+            if not self.demo:
+                self.camera.open()
             cv2.namedWindow(self.renderer.window_name, cv2.WINDOW_NORMAL)
+            cv2.setMouseCallback(self.renderer.window_name, self._on_mouse)
             while self.state is not AppState.QUIT:
                 started = time.perf_counter()
-                if self.state is AppState.ERROR:
+                if self.demo:
+                    frame = self._blank_frame()
+                elif self.state is AppState.ERROR:
                     frame = (
-                        self._last_frame
-                        if self._last_frame is not None
-                        else self._blank_frame()
+                        self._last_frame if self._last_frame is not None else self._blank_frame()
                     )
                 else:
                     try:
@@ -195,11 +226,16 @@ class Application:
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 delay = max(1, round(self.camera.config.frame_interval_ms - elapsed_ms))
                 pending = parse_key(cv2.waitKeyEx(delay))
+                if pending is KeyAction.NONE:
+                    pending = self._mouse_action
+                self._mouse_action = KeyAction.NONE
                 # Algunos backends (p. ej. Wayland nativo) no ofrecen esta propiedad.
                 with contextlib.suppress(cv2.error):
                     if cv2.getWindowProperty(self.renderer.window_name, cv2.WND_PROP_VISIBLE) == 0:
                         self.state = AppState.QUIT
         finally:
+            self._cancel_solving()
+            self._background_solver = False
             self.camera.release()
             with contextlib.suppress(cv2.error):
                 cv2.destroyAllWindows()
@@ -248,6 +284,7 @@ class Application:
         if action is KeyAction.NONE:
             return
         if action is KeyAction.QUIT:
+            self._cancel_solving()
             self.state = AppState.QUIT
             return
         if action is KeyAction.TOGGLE_MASK:
@@ -275,6 +312,22 @@ class Application:
                 self._previous_move()
             elif action is KeyAction.RESET:
                 self._restart_scan(keep_message=False)
+            elif action is KeyAction.PAUSE:
+                self._playback.toggle_pause()
+            elif action is KeyAction.REPLAY:
+                self._playback.restart()
+            elif action is KeyAction.SPEED:
+                self._playback.cycle_speed()
+            elif action is KeyAction.VIEW:
+                self._viewpoint = (self._viewpoint + 1) % len(VIEW_NAMES)
+        elif self.state is AppState.SOLVING and action is KeyAction.RESET:
+            self._restart_scan(keep_message=False)
+        elif self.state is AppState.FINISHED and action is KeyAction.PREVIOUS:
+            if self.solution is not None and self.solution.moves:
+                self.state = AppState.GUIDING
+                self._guide_index = self.solution.move_count - 1
+                self._playback.restart()
+                self._guide_message = "Si ya hiciste este giro, deshazlo antes de repetirlo."
         elif self.state is AppState.FINISHED and action is KeyAction.RESET:
             self._restart_scan(keep_message=False)
         elif self.state is AppState.ERROR and action is KeyAction.RESET:
@@ -339,10 +392,19 @@ class Application:
             self._solve_announced = True
             return
 
-        started = time.perf_counter()
         try:
-            solution = self.solver.solve(self.model)
-        except SolverError as error:
+            if self._background_solver:
+                if self._task is None:
+                    self._task = SolveTask(self.model.to_kociemba_string(), self.solver.max_depth)
+                    return
+                solution = self._task.poll()
+                if solution is None:
+                    return
+                self._task = None
+            else:
+                solution = self.solver.solve(self.model)
+        except (SolverError, OSError, RuntimeError) as error:
+            self._cancel_solving()
             self.report = self.model.validate()
             self.state = AppState.VALIDATING
             self._set_message(f"No se pudo calcular la solucion: {error}", MessageLevel.ERROR)
@@ -354,8 +416,16 @@ class Application:
             print("El cubo ya estaba resuelto.")
         else:
             self.state = AppState.GUIDING
+            current = self.model.copy()
+            states = [current.copy()]
+            for move in solution.moves:
+                current.apply_move(move.notation)
+                states.append(current.copy())
+            self._guide_states = tuple(states)
+            self._guide_index = 0
+            self._playback.restart()
             self._set_message("", MessageLevel.INFO)
-            elapsed = (time.perf_counter() - started) * 1000.0
+            elapsed = solution.elapsed_ms
             print(
                 f"Solucion ({solution.move_count} movimientos, {elapsed:.0f} ms): "
                 f"{solution.notation}"
@@ -375,13 +445,24 @@ class Application:
             print("Secuencia completada: el cubo deberia estar resuelto.")
             return
         self._guide_index = min(self._guide_index + 1, self.solution.move_count - 1)
+        self._playback.restart()
+        self._guide_message = ""
 
     def _previous_move(self) -> None:
         """Retrocede un movimiento en la guía."""
         self._guide_index = max(0, self._guide_index - 1)
+        self._playback.restart()
+        self._guide_message = "Retroceder no deshace tu giro fisico. Corrige el cubo si hace falta."
+
+    def _cancel_solving(self) -> None:
+        """Detiene un cálculo pendiente antes de salir o empezar otro cubo."""
+        if self._task is not None:
+            self._task.close()
+            self._task = None
 
     def _restart_scan(self, keep_message: bool) -> None:
         """Reinicia el escaneo desde cero."""
+        self._cancel_solving()
         self.model = CubeModel()
         self.report = None
         self.solution = None
@@ -390,6 +471,12 @@ class Application:
         self.state = AppState.SCANNING
         self._solve_announced = False
         self._guide_index = 0
+        self._guide_states = ()
+        self._guide_message = ""
+        self._playback.restart()
+        if self.demo:
+            self.load_demo()
+            return
         if not keep_message:
             self._set_message(
                 "Escaneo reiniciado. Muestra la cara U a la camara",
@@ -473,6 +560,13 @@ class Application:
                 index=self._guide_index,
                 up_color=self.model.center(Face.U),
                 front_color=self.model.center(Face.F),
+                cube=self._guide_states[self._guide_index] if self._guide_states else self.model,
+                progress=self._playback.progress(self.solution.moves[self._guide_index].is_double),
+                paused=self._playback.paused,
+                speed=self._playback.speed,
+                viewpoint=self._viewpoint,
+                message=self._guide_message,
+                demo=self.demo,
             )
             return self.renderer.draw_guiding(frame, guiding_view)
 
@@ -542,6 +636,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--height", type=int, default=720, help="alto solicitado (px)")
     parser.add_argument("--fps", type=int, default=30, help="fotogramas por segundo solicitados")
     parser.add_argument(
+        "--backend",
+        choices=("auto", "dshow", "msmf", "v4l2"),
+        default="auto",
+        help="controlador de camara: auto, Windows dshow/msmf, Linux v4l2",
+    )
+    parser.add_argument("--demo", action="store_true", help="prueba la guia 3D sin camara")
+    parser.add_argument(
         "--roi",
         type=_parse_roi,
         default=None,
@@ -605,6 +706,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             height=args.height,
             fps=args.fps,
             roi=args.roi or ROIConfig(),
+            backend=args.backend,
         )
         if args.probe_camera:
             return probe_camera(config)
@@ -612,7 +714,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         detector = ColorDetector()
         renderer = UIRenderer(show_mask=args.debug_mask)
         camera = CameraHandler(config)
-        application = Application(camera, detector, renderer, solver)
+        application = Application(camera, detector, renderer, solver, demo=args.demo)
+        if args.demo:
+            application.load_demo()
     except (CameraError, SolverError) as error:
         print(f"Error de configuracion: {error}", file=sys.stderr)
         return 2

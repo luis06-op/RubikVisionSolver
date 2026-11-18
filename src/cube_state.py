@@ -144,6 +144,16 @@ class Facelet:
         """Índice de la pegatina en la cadena de Kociemba (0-53)."""
         return FACES.index(self.face) * 9 + self.row * 3 + self.col
 
+    @property
+    def position(self) -> Point:
+        """Centro de la pieza en coordenadas X derecha, Y arriba, Z frente."""
+        return _sticker_point(self.face, self.row, self.col)
+
+    @property
+    def normal(self) -> Point:
+        """Normal exterior de la cara, compartida por modelo y animación."""
+        return _normal(self.face)
+
 
 def iter_facelets() -> Iterator[Facelet]:
     """Recorre las 54 pegatinas en el orden de la cadena de Kociemba.

@@ -7,12 +7,13 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from src.animation import VIEW_NAMES
 from src.camera import CameraConfig, CameraHandler
 from src.cube_state import SCAN_ORDER, Color, CubeModel, Face
 from src.detector import ColorDetector
 from src.main import Application, AppState
 from src.solver import RubikSolver
-from src.ui_renderer import KeyAction, UIRenderer
+from src.ui_renderer import GuidingView, KeyAction, UIRenderer
 
 COLORS = {
     Color.WHITE: (245, 245, 245),
@@ -72,6 +73,28 @@ def main() -> None:
     save("guiding", app.process(source(Face.F)))
     if app.state is not AppState.GUIDING or app.solution is None:
         raise RuntimeError("El cubo sintético no llegó a la guía")
+
+    view = GuidingView(
+        solution=app.solution,
+        index=0,
+        up_color=app.model.center(Face.U),
+        front_color=app.model.center(Face.F),
+        cube=app._guide_states[0],
+        progress=0.0,
+    )
+    for frame_number, progress in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
+        view = GuidingView(
+            solution=view.solution, index=0, up_color=view.up_color,
+            front_color=view.front_color, cube=view.cube, progress=progress,
+        )
+        save(f"anim_{frame_number}", renderer.draw_guiding(source(Face.F).copy(), view))
+    view = GuidingView(
+        solution=view.solution, index=0, up_color=view.up_color,
+        front_color=view.front_color, cube=view.cube, progress=0.5, viewpoint=3,
+    )
+    save("view_back", renderer.draw_guiding(source(Face.F).copy(), view))
+    assert VIEW_NAMES[view.viewpoint] == "Detras"
+
     for _ in app.solution.moves:
         image = app.process(source(Face.F), KeyAction.NEXT)
     save("finished", image)

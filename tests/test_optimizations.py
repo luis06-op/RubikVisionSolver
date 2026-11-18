@@ -56,6 +56,7 @@ def test_window_creation_failure_releases_camera(monkeypatch: pytest.MonkeyPatch
 def test_window_close_exits_and_releases_camera(monkeypatch: pytest.MonkeyPatch) -> None:
     app, capture = build_application()
     monkeypatch.setattr(cv2, "namedWindow", lambda *args: None)
+    monkeypatch.setattr(cv2, "setMouseCallback", lambda *args: None)
     monkeypatch.setattr(cv2, "imshow", lambda *args: None)
     monkeypatch.setattr(cv2, "waitKeyEx", lambda delay: -1)
     monkeypatch.setattr(cv2, "getWindowProperty", lambda *args: 0.0)
@@ -77,6 +78,7 @@ def test_slow_frame_does_not_add_another_frame_interval(monkeypatch: pytest.Monk
 
     monkeypatch.setattr("src.main.time.perf_counter", lambda: next(ticks))
     monkeypatch.setattr(cv2, "namedWindow", lambda *args: None)
+    monkeypatch.setattr(cv2, "setMouseCallback", lambda *args: None)
     monkeypatch.setattr(cv2, "imshow", lambda *args: None)
     monkeypatch.setattr(cv2, "waitKeyEx", wait)
     monkeypatch.setattr(cv2, "getWindowProperty", lambda *args: 0.0)

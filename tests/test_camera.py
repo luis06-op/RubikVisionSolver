@@ -11,8 +11,10 @@ Ejecutar con::
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
+from src import camera as camera_module
 from src.camera import CameraConfig, CameraError, CameraHandler, ROIConfig
 
 FRAME_SHAPE = (120, 160, 3)
@@ -239,3 +241,47 @@ class TestLifecycle:
         with pytest.raises(RuntimeError), build_handler(capture):
             raise RuntimeError("fallo simulado")
         assert capture.released
+
+
+class TestBackendSelection:
+    """Controladores nativos y alternativas automáticas por sistema operativo."""
+
+    @pytest.mark.parametrize("backend", ["dshow", "msmf", "v4l2"])
+    def test_explicit_backend_is_used(self, monkeypatch: pytest.MonkeyPatch, backend: str) -> None:
+        seen: list[int] = []
+
+        def factory(index: int, api: int) -> FakeCapture:
+            seen.append(api)
+            return FakeCapture([make_frame()])
+
+        monkeypatch.setattr(camera_module.cv2, "VideoCapture", factory)
+        config = CameraConfig(backend=backend, warmup_frames=0)
+        handler = CameraHandler(config)
+        handler.open()
+        expected = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2}
+        assert seen == [expected[backend]]
+        handler.release()
+
+    def test_auto_falls_back_when_preferred_backend_fails(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        attempts: list[int] = []
+
+        def factory(index: int, api: int) -> FakeCapture:
+            attempts.append(api)
+            capture = FakeCapture([make_frame()])
+            if api == cv2.CAP_V4L2:
+                capture.opened = False
+            return capture
+
+        monkeypatch.setattr(camera_module.cv2, "VideoCapture", factory)
+        monkeypatch.setattr(camera_module.sys, "platform", "linux")
+        handler = CameraHandler(CameraConfig(warmup_frames=0))
+        handler.open()
+        assert handler.is_open
+        assert attempts == [cv2.CAP_V4L2, cv2.CAP_ANY]
+        handler.release()
+
+    def test_unknown_backend_is_rejected(self) -> None:
+        with pytest.raises(CameraError):
+            CameraConfig(backend="directshow")

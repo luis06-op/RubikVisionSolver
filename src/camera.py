@@ -19,6 +19,7 @@ Examples:
 from __future__ import annotations
 
 import contextlib
+import sys
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -70,12 +71,7 @@ class ROIConfig:
     @property
     def is_full_frame(self) -> bool:
         """Indica si la región cubre todo el fotograma."""
-        return (
-            self.x == 0.0
-            and self.y == 0.0
-            and self.width == 1.0
-            and self.height == 1.0
-        )
+        return self.x == 0.0 and self.y == 0.0 and self.width == 1.0 and self.height == 1.0
 
     def pixel_bounds(self, frame_shape: Sequence[int]) -> tuple[int, int, int, int]:
         """Convierte la ROI a píxeles.
@@ -133,6 +129,7 @@ class CameraConfig:
     read_attempts: int = 5
     read_backoff: float = 0.02
     warmup_frames: int = 3
+    backend: str = "auto"
 
     def __post_init__(self) -> None:
         """Valida los parámetros de captura.
@@ -150,6 +147,8 @@ class CameraConfig:
             raise CameraError("read_attempts debe ser al menos 1")
         if self.warmup_frames < 0:
             raise CameraError("warmup_frames no puede ser negativo")
+        if self.backend not in {"auto", "dshow", "msmf", "v4l2"}:
+            raise CameraError("Backend desconocido: usa auto, dshow, msmf o v4l2")
 
     @property
     def frame_interval_ms(self) -> int:
@@ -183,10 +182,28 @@ class CameraHandler:
                 ``cv2.VideoCapture``.
         """
         self.config = config or CameraConfig()
-        self._capture_factory: CaptureFactory = capture_factory or cv2.VideoCapture
+        self._capture_factory: CaptureFactory = capture_factory or self._create_capture
         self._capture: cv2.VideoCapture | None = None
 
     # -- Ciclo de vida -----------------------------------------------------
+
+    def _create_capture(self, index: int) -> cv2.VideoCapture:
+        """Selecciona el controlador nativo con alternativa automática."""
+        backends = {"dshow": cv2.CAP_DSHOW, "msmf": cv2.CAP_MSMF, "v4l2": cv2.CAP_V4L2}
+        if self.config.backend != "auto":
+            return cv2.VideoCapture(index, backends[self.config.backend])
+        if sys.platform == "win32":
+            candidates = (cv2.CAP_DSHOW, cv2.CAP_MSMF)
+        elif sys.platform.startswith("linux"):
+            candidates = (cv2.CAP_V4L2, cv2.CAP_ANY)
+        else:
+            candidates = (cv2.CAP_ANY,)
+        for backend in candidates:
+            capture = cv2.VideoCapture(index, backend)
+            if capture.isOpened():
+                return capture
+            capture.release()
+        return cv2.VideoCapture(index, cv2.CAP_ANY)
 
     def open(self) -> None:
         """Abre el dispositivo y descarta los primeros fotogramas.
@@ -205,15 +222,14 @@ class CameraHandler:
                 "Comprueba que esta conectada y que otra aplicacion no la esta usando"
             )
 
-        try:
-            capture.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.width)
-            capture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.height)
-            capture.set(cv2.CAP_PROP_FPS, self.config.fps)
-            capture.set(cv2.CAP_PROP_BUFFERSIZE, self.config.buffer_size)
-        except cv2.error:  # pragma: no cover - depende del backend de vídeo
-            # Algunos controladores rechazan propiedades opcionales; no impiden
-            # capturar y por eso no se considera un error fatal.
-            pass
+        for prop, value in (
+            (cv2.CAP_PROP_FRAME_WIDTH, self.config.width),
+            (cv2.CAP_PROP_FRAME_HEIGHT, self.config.height),
+            (cv2.CAP_PROP_FPS, self.config.fps),
+            (cv2.CAP_PROP_BUFFERSIZE, self.config.buffer_size),
+        ):
+            with contextlib.suppress(cv2.error):
+                capture.set(prop, value)
 
         self._capture = capture
         for _ in range(self.config.warmup_frames):
@@ -234,7 +250,10 @@ class CameraHandler:
 
         last_error: str = "sin detalle"
         for attempt in range(self.config.read_attempts):
-            ok, frame = self._capture.read()
+            try:
+                ok, frame = self._capture.read()
+            except cv2.error:
+                ok, frame = False, None
             if ok and frame is not None and frame.size > 0:
                 return self.config.roi.crop(frame)
             last_error = f"intento {attempt + 1}/{self.config.read_attempts}"

@@ -29,6 +29,7 @@ from typing import Final
 import cv2
 import numpy as np
 
+from .animation import VIEW_NAMES, CubeAnimator, effective_view
 from .cube_state import SCAN_ORDER, Color, CubeModel, Face, ValidationReport
 from .detector import FaceletSample, Rect
 from .solver import Solution
@@ -114,6 +115,10 @@ class KeyAction(Enum):
     RESET = "reset"
     QUIT = "quit"
     TOGGLE_MASK = "toggle_mask"
+    PAUSE = "pause"
+    REPLAY = "replay"
+    SPEED = "speed"
+    VIEW = "view"
 
 
 _KEY_MAP: Final[dict[int, KeyAction]] = {
@@ -135,6 +140,14 @@ _KEY_MAP: Final[dict[int, KeyAction]] = {
     ord("R"): KeyAction.RESET,
     ord("m"): KeyAction.TOGGLE_MASK,
     ord("M"): KeyAction.TOGGLE_MASK,
+    ord("p"): KeyAction.PAUSE,
+    ord("P"): KeyAction.PAUSE,
+    ord("a"): KeyAction.REPLAY,
+    ord("A"): KeyAction.REPLAY,
+    ord("s"): KeyAction.SPEED,
+    ord("S"): KeyAction.SPEED,
+    ord("v"): KeyAction.VIEW,
+    ord("V"): KeyAction.VIEW,
 }
 
 
@@ -206,6 +219,7 @@ class ScanView:
     samples: tuple[FaceletSample, ...] = ()
     scanned: tuple[tuple[Face, Color], ...] = ()
     message: str = ""
+
     level: MessageLevel = MessageLevel.INFO
     mask: np.ndarray | None = None
 
@@ -244,6 +258,13 @@ class GuidingView:
     index: int
     up_color: Color | None
     front_color: Color | None
+    cube: CubeModel | None = None
+    progress: float = 0.0
+    paused: bool = False
+    speed: float = 1.0
+    viewpoint: int = 0
+    message: str = ""
+    demo: bool = False
 
 
 @dataclass(frozen=True)
@@ -300,6 +321,38 @@ class UIRenderer:
         """
         self.window_name = window_name
         self.show_mask = show_mask
+        self._buttons: list[tuple[Rect, KeyAction]] = []
+        self._animator = CubeAnimator()
+
+    def hit_test(self, x: int, y: int) -> KeyAction:
+        """Acción bajo el cursor, en coordenadas de la imagen de HighGUI."""
+        for rect, action in self._buttons:
+            if rect.x <= x < rect.x2 and rect.y <= y < rect.y2:
+                return action
+        return KeyAction.NONE
+
+    def _controls(
+        self, frame: np.ndarray, layout: _Layout, items: tuple[tuple[str, KeyAction], ...], y: int
+    ) -> None:
+        """Dibuja botones grandes con las mismas acciones que el teclado."""
+        gap = layout.px(8)
+        width = min(
+            layout.px(194),
+            (layout.width - 2 * layout.margin - gap * (len(items) - 1)) // len(items),
+        )
+        for index, (label, action) in enumerate(items):
+            rect = Rect(layout.margin + index * (width + gap), y, width, layout.px(36))
+            color = _ACCENT if action in (KeyAction.CAPTURE, KeyAction.NEXT) else _BORDER
+            self._blend_rect(frame, rect, color, 1.0)
+            self._put_text(
+                frame,
+                label,
+                (rect.center[0], rect.y + layout.px(24)),
+                layout.font(0.43),
+                _BG if color == _ACCENT else _TEXT,
+                anchor="center",
+            )
+            self._buttons.append((rect, action))
 
     # -- API pública -------------------------------------------------------
 
@@ -313,6 +366,7 @@ class UIRenderer:
         Returns:
             El mismo fotograma con la interfaz superpuesta.
         """
+        self._buttons.clear()
         layout = _Layout.from_frame(frame)
         self._draw_header(frame, layout, "Escaneo de caras", self._progress_text(view))
         self._draw_grid(frame, layout, view)
@@ -331,6 +385,16 @@ class UIRenderer:
             layout,
             "ESPACIO  Capturar   |   M  Colores   |   R  Reiniciar   |   Q  Salir",
         )
+        self._controls(
+            frame,
+            layout,
+            (
+                ("Capturar cara", KeyAction.CAPTURE),
+                ("Reiniciar", KeyAction.RESET),
+                ("Colores HSV", KeyAction.TOGGLE_MASK),
+            ),
+            layout.height - layout.px(76),
+        )
         return frame
 
     def draw_validation(self, frame: np.ndarray, view: ValidationView) -> np.ndarray:
@@ -343,6 +407,7 @@ class UIRenderer:
         Returns:
             El mismo fotograma con la interfaz superpuesta.
         """
+        self._buttons.clear()
         layout = _Layout.from_frame(frame)
         self._dim(frame, 0.9)
         self._draw_header(
@@ -353,7 +418,7 @@ class UIRenderer:
         )
 
         top = layout.px(128)
-        card_height = layout.height - top - layout.px(64)
+        card_height = layout.height - top - layout.px(110)
         net_panel = Rect(layout.margin, top, int(layout.width * 0.43) - layout.margin, card_height)
         self._panel(frame, net_panel, 1.0)
         self._put_text(
@@ -447,6 +512,12 @@ class UIRenderer:
             if view.report.is_valid
             else "R  Reescanear   |   Q  Salir",
         )
+        items = (
+            (("Resolver", KeyAction.NEXT), ("Reescanear", KeyAction.RESET))
+            if (view.report.is_valid)
+            else (("Reescanear", KeyAction.RESET),)
+        )
+        self._controls(frame, layout, items, layout.height - layout.px(76))
         return frame
 
     def draw_solving(
@@ -465,6 +536,7 @@ class UIRenderer:
         Returns:
             El mismo fotograma con la interfaz superpuesta.
         """
+        self._buttons.clear()
         layout = _Layout.from_frame(frame)
         self._dim(frame, 0.55)
         center_y = layout.height // 2
@@ -497,6 +569,12 @@ class UIRenderer:
             _MUTED,
             anchor="center",
         )
+        self._controls(
+            frame,
+            layout,
+            (("Cancelar", KeyAction.RESET), ("Salir", KeyAction.QUIT)),
+            layout.height - layout.px(76),
+        )
         return frame
 
     def draw_guiding(self, frame: np.ndarray, view: GuidingView) -> np.ndarray:
@@ -509,34 +587,65 @@ class UIRenderer:
         Returns:
             El mismo fotograma con la interfaz superpuesta.
         """
+        self._buttons.clear()
         layout = _Layout.from_frame(frame)
         total = view.solution.move_count
         current = view.solution.moves[view.index]
         top = layout.px(128)
-        bottom = layout.height - layout.px(164)
+        bottom = layout.height - layout.px(198)
         left = Rect(layout.margin, top, int(layout.width * 0.43) - layout.margin, bottom - top)
-        self._camera_preview(frame, left, layout)
+        # Conserva una miniatura real de la cámara antes de pintar el lienzo.
+        live_width = layout.px(186)
+        live_height = layout.px(106)
+        ratio = min(live_width / frame.shape[1], live_height / frame.shape[0])
+        live = cv2.resize(
+            frame,
+            (max(1, round(frame.shape[1] * ratio)), max(1, round(frame.shape[0] * ratio))),
+            interpolation=cv2.INTER_AREA,
+        )
+        frame[:] = _BG
+        self._panel(frame, left, 1.0)
         self._draw_header(
             frame,
             layout,
             "Resolucion guiada",
-            f"Paso {view.index + 1:02d} de {total:02d}  /  Tu cubo, movimiento a movimiento",
+            f"Paso {view.index + 1:02d} de {total:02d} / Mira el giro, hazlo en tu cubo y confirma",
         )
         self._put_text(
             frame,
-            "CAMARA EN VIVO",
+            "DEMOSTRACION 3D",
             (left.x + layout.px(16), top + layout.px(28)),
             layout.font(0.4),
             _ACCENT,
         )
-        reference = (
-            f"Arriba: {self._color_name(view.up_color)}  /  "
-            f"Frente: {self._color_name(view.front_color)}"
+        cube_rect = Rect(
+            left.x + layout.px(8),
+            top + layout.px(46),
+            left.width - layout.px(16),
+            left.height - layout.px(118),
         )
+        picture = self._animator.render(
+            view.cube or CubeModel.solved(),
+            current,
+            view.progress,
+            cube_rect.width,
+            cube_rect.height,
+            view.viewpoint,
+        )
+        frame[cube_rect.as_slice()] = picture
+        view_name = VIEW_NAMES[effective_view(current.face, view.viewpoint)]
+        self._put_text(
+            frame,
+            f"Vista: {view_name}",
+            (left.x + layout.px(16), left.y2 - layout.px(48)),
+            layout.font(0.43),
+            _VIOLET,
+        )
+        reference = "La vista cambia; NO gires todo tu cubo."
         self._draw_paragraph(
             frame,
             reference,
-            (left.x + layout.px(16), left.y2 - layout.px(38)),
+            (left.x + layout.px(16), left.y2 - layout.px(22)),
             left.width - layout.px(32),
             layout.font(0.44),
             _TEXT,
@@ -549,7 +658,7 @@ class UIRenderer:
         x = panel.x + layout.px(24)
         self._put_text(
             frame,
-            "AHORA / " + current.hint.upper(),
+            "GIRA SOLO LA " + current.hint.upper(),
             (x, top + layout.px(34)),
             layout.font(0.46),
             _VIOLET,
@@ -557,74 +666,72 @@ class UIRenderer:
         self._put_text(
             frame,
             current.notation,
-            (x, top + layout.px(132)),
-            layout.font(2.6),
+            (x, top + layout.px(116)),
+            layout.font(2.2),
             _TEXT,
             thickness=max(2, layout.px(3)),
         )
-        # Flecha vista de frente a la cara indicada; la cara trasera se mira
-        # desde atrás, no desde la perspectiva frontal de la webcam.
-        cx, cy = panel.x2 - layout.px(86), top + layout.px(96)
-        radius = layout.px(40)
-        start, end = (35, 300) if current.is_prime else (-120, 145)
-        points = np.asarray(
-            cv2.ellipse2Poly((cx, cy), (radius, radius), 0, start, end, 8), dtype=np.int32
-        )
-        if current.is_prime:
-            points = points[::-1].copy()
-        cv2.polylines(frame, [points], False, _ACCENT, max(2, layout.px(3)), cv2.LINE_AA)
-        cv2.arrowedLine(
-            frame,
-            tuple(points[-3]),
-            tuple(points[-1]),
-            _ACCENT,
-            max(2, layout.px(3)),
-            cv2.LINE_AA,
-            tipLength=0.6,
-        )
-        self._put_text(
-            frame,
-            "180" if current.is_double else "90",
-            (cx, cy + layout.px(7)),
-            layout.font(0.62),
-            _ACCENT,
-            anchor="center",
-        )
         turn = (
-            "Media vuelta"
+            "180 grados / media vuelta"
             if current.is_double
-            else "Sentido antihorario"
+            else "90 grados / antihorario"
             if current.is_prime
-            else "Sentido horario"
+            else "90 grados / horario"
         )
         y = self._draw_paragraph(
             frame,
             turn,
-            (x, top + layout.px(184)),
+            (x, top + layout.px(158)),
             panel.width - layout.px(48),
-            layout.font(0.7),
+            layout.font(0.63),
             _TEXT,
             max_lines=2,
         )
         self._draw_paragraph(
             frame,
-            f"Mirando de frente la cara {current.face_name}. "
-            "Gira solo esa cara, sin cambiar la orientacion del cubo.",
+            f"Mirando de frente la cara {current.face_name}. Mira como se mueve la capa resaltada.",
             (x, y + layout.px(12)),
             panel.width - layout.px(48),
             layout.font(0.48),
             _MUTED,
             max_lines=3,
         )
+        live_x, live_y = (
+            panel.x2 - live.shape[1] - layout.px(16),
+            panel.y2 - live.shape[0] - layout.px(18),
+        )
+        frame[live_y : live_y + live.shape[0], live_x : live_x + live.shape[1]] = live
         self._put_text(
             frame,
-            "ESPACIO  Ya hice este giro",
-            (x, panel.y2 - layout.px(24)),
+            "DEMO / SIN CAMARA" if view.demo else "TU CAMARA",
+            (live_x, live_y - layout.px(8)),
+            layout.font(0.36),
+            _MUTED,
+        )
+        self._draw_paragraph(
+            frame,
+            f"Arriba: {self._color_name(view.up_color)}. "
+            f"Frente: {self._color_name(view.front_color)}.",
+            (x, live_y + layout.px(22)),
+            live_x - x - layout.px(12),
             layout.font(0.46),
             _ACCENT,
+            max_lines=3,
         )
-
-        list_y = bottom + layout.px(32)
+        self._controls(
+            frame,
+            layout,
+            (
+                ("Hecho", KeyAction.NEXT),
+                ("Anterior", KeyAction.PREVIOUS),
+                ("Repetir", KeyAction.REPLAY),
+                ("Reanudar" if view.paused else "Pausar", KeyAction.PAUSE),
+                (f"Ritmo {view.speed:g}x", KeyAction.SPEED),
+                ("Cambiar vista", KeyAction.VIEW),
+            ),
+            bottom + layout.px(16),
+        )
+        list_y = bottom + layout.px(80)
         self._put_text(frame, "A CONTINUACION", (layout.margin, list_y), layout.font(0.4), _MUTED)
         remaining = view.solution.moves[view.index + 1 : view.index + 7]
         for index, move in enumerate(remaining):
@@ -632,16 +739,26 @@ class UIRenderer:
                 layout.margin + index * layout.px(78),
                 list_y + layout.px(12),
                 layout.px(64),
-                layout.px(40),
+                layout.px(32),
             )
             self._panel(frame, chip, 1.0)
             self._put_text(
                 frame,
                 move.notation,
-                (chip.center[0], chip.y + layout.px(27)),
+                (chip.center[0], chip.y + layout.px(23)),
                 layout.font(0.62),
                 _TEXT,
                 anchor="center",
+            )
+        if view.message:
+            self._draw_paragraph(
+                frame,
+                view.message,
+                (layout.width // 2, list_y + layout.px(22)),
+                layout.width // 2 - layout.margin,
+                layout.font(0.4),
+                _WARNING,
+                max_lines=2,
             )
         if not remaining:
             self._put_text(
@@ -664,21 +781,10 @@ class UIRenderer:
         self._draw_key_hints(
             frame,
             layout,
-            "ESPACIO  Hecho   |   B  Anterior   |   R  Reiniciar   |   Q  Salir",
+            "ESPACIO Hecho | B Atras | A Repetir | P Pausa | "
+            "S Ritmo | V Vista | R Reiniciar | Q Salir",
         )
         return frame
-
-    def _camera_preview(self, frame: np.ndarray, rect: Rect, layout: _Layout) -> None:
-        """Encaja la cámara sin estirarla y prepara el fondo de la guía."""
-        available_height = max(1, rect.height - layout.px(110))
-        ratio = min(rect.width / frame.shape[1], available_height / frame.shape[0])
-        width, height = max(1, round(frame.shape[1] * ratio)), max(1, round(frame.shape[0] * ratio))
-        preview = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
-        frame[:] = _BG
-        self._panel(frame, rect, 1.0)
-        x = rect.x + (rect.width - width) // 2
-        y = rect.y + layout.px(44) + (available_height - height) // 2
-        frame[y : y + height, x : x + width] = preview
 
     def draw_finished(self, frame: np.ndarray, solution: Solution) -> np.ndarray:
         """Dibuja la pantalla final cuando el cubo está resuelto.
@@ -690,6 +796,7 @@ class UIRenderer:
         Returns:
             El mismo fotograma con la interfaz superpuesta.
         """
+        self._buttons.clear()
         layout = _Layout.from_frame(frame)
         self._dim(frame, 0.55)
         center_x = layout.width // 2
@@ -736,6 +843,16 @@ class UIRenderer:
             _MUTED,
             anchor="center",
         )
+        self._controls(
+            frame,
+            layout,
+            (
+                ("Nuevo cubo", KeyAction.RESET),
+                ("Ultimo giro", KeyAction.PREVIOUS),
+                ("Salir", KeyAction.QUIT),
+            ),
+            layout.height - layout.px(76),
+        )
         return frame
 
     def draw_error(self, frame: np.ndarray, title: str, detail: str) -> np.ndarray:
@@ -749,6 +866,7 @@ class UIRenderer:
         Returns:
             El mismo fotograma con la interfaz superpuesta.
         """
+        self._buttons.clear()
         layout = _Layout.from_frame(frame)
         self._dim(frame, 0.6)
         center_x = layout.width // 2
@@ -790,6 +908,12 @@ class UIRenderer:
             layout.font(0.48),
             _MUTED,
             anchor="center",
+        )
+        self._controls(
+            frame,
+            layout,
+            (("Reintentar", KeyAction.RESET), ("Salir", KeyAction.QUIT)),
+            layout.height - layout.px(76),
         )
         return frame
 

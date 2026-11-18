@@ -137,18 +137,23 @@ Si el esquema es correcto, pulsa **ESPACIO** para calcular la solución.
 
 ## 6. Seguir la solución
 
-La pantalla de guía muestra un movimiento por vez:
-
-```
-R'
-Gira la cara derecha 90 grados en sentido antihorario
-```
+La pantalla de guía muestra un movimiento por vez con una **animación 3D**:
+la capa que debe girar aparece resaltada y el punto de vista cambia para que
+veas las caras izquierda, trasera e inferior. El cubo animado reproduce tus
+colores escaneados antes de aplicar el paso.
 
 - **ESPACIO**: marcar el movimiento como aplicado y pasar al siguiente.
 - **ENTER**, **N** o **→**: confirmar y avanzar igual que ESPACIO.
 - **B**: volver al movimiento anterior. No deshace el giro físico; corrige el
   cubo antes de volver a ejecutar ese paso.
-- `R`: reiniciar el escaneo desde cero.
+- **A**: repetir la animación desde el principio.
+- **P**: pausar o reanudar la animación.
+- **S**: cambiar el ritmo (lento, normal o rápido).
+- **V**: cambiar manualmente el ángulo de la demostración.
+- **R**: reiniciar el escaneo desde cero.
+
+También puedes usar los **botones** con el ratón: todos realizan la misma
+acción que su tecla. La cámara en miniatura sigue visible abajo a la derecha.
 
 La notación es la de Singmaster:
 
@@ -159,10 +164,11 @@ La notación es la de Singmaster:
 | `'` | 90° en sentido antihorario. |
 | `2` | 180° (media vuelta). |
 
-La guía mantiene la cámara a la izquierda y el movimiento a la derecha. La
-flecha indica el sentido **mirando de frente la cara que debes girar**, no
-necesariamente desde la vista frontal de la cámara. En la parte inferior verás
-los próximos movimientos y el progreso de los pasos confirmados.
+La demostración ocupa la izquierda y las instrucciones, la derecha. La
+animación muestra el giro **mirando de frente la cara que debes girar**, no
+desde la vista frontal de tu cámara: por eso el ángulo cambia solo. En la parte
+inferior verás los próximos movimientos y el progreso de los pasos confirmados.
+La animación no avanza la guía: solo tú decides cuándo un paso está hecho.
 
 Al confirmar el último movimiento, aparece «Secuencia completada». Comprueba
 las seis caras: la aplicación no verifica automáticamente los giros mediante
@@ -174,10 +180,14 @@ vídeo. Pulsa `R` si quieres escanear otro cubo.
 
 | Tecla | Acción |
 |---|---|
-| `ESPACIO` | Capturar la cara, confirmar el esquema o avanzar de movimiento. |
+| `ESPACIO` | Capturar la cara, confirmar el esquema o marcar el giro como hecho. |
 | `ENTER`, `N`, `→` | Confirmar o avanzar fuera del escaneo. |
 | `B`, `←` | Movimiento anterior. |
-| `R` | Reiniciar el escaneo / reintentar la cámara. |
+| `A` | Repetir la animación del giro actual. |
+| `P` | Pausar / reanudar la animación. |
+| `S` | Cambiar el ritmo de la animación. |
+| `V` | Cambiar el ángulo de la demostración 3D. |
+| `R` | Reiniciar / cancelar el cálculo / reintentar la cámara. |
 | `M` | Ver u ocultar la máscara de colores (depuración). |
 | `Q`, `ESC` | Salir. |
 
@@ -191,6 +201,12 @@ vídeo. Pulsa `R` si quieres escanear otro cubo.
   OBS, etc.).
 - Prueba otro índice: `python -m src.main --camera 1`.
 - En Linux, verifica que tu usuario tenga permiso sobre `/dev/video*`.
+- Prueba un controlador distinto: `--backend v4l2` en Linux o `--backend dshow`
+  / `--backend msmf` en Windows.
+- En Windows, si `pip install -r requirements.txt` falla al compilar `kociemba`,
+  instala las Herramientas de compilación de Visual Studio con la carga de
+  trabajo «Desarrollo de escritorio con C++» y vuelve a intentarlo.
+- Sin cámara, puedes aprender los controles con `python -m src.main --demo`.
 
 ### La imagen se ve muy oscura o demasiado clara
 

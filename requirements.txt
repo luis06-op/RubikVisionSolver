@@ -1,0 +1,18 @@
+# Dependencias de ejecución de RubikVisionSolver.
+#
+# El código usa sintaxis compatible con Python 3.10, pero NumPy y OpenCV se
+# distribuyen en ruedas binarias por versión de Python. Los marcadores de
+# entorno fijan la combinación probada en cada rama:
+#
+#   * Python 3.10 y 3.11: NumPy 2.2 LTS + OpenCV 4.11.
+#   * Python 3.12 o superior: NumPy 2.5 + OpenCV 5.1 (combinación probada).
+
+numpy==2.2.6; python_version < "3.12"
+numpy==2.5.5; python_version >= "3.12"
+
+# Es imprescindible la variante con interfaz gráfica: la aplicación abre una
+# ventana con cv2.namedWindow/cv2.imshow. No instales opencv-python-headless.
+opencv-python==4.11.0.86; python_version < "3.12"
+opencv-python==5.1.0.95; python_version >= "3.12"
+
+kociemba==1.2.1

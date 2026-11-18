@@ -1,0 +1,19 @@
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src"]
+strict = true
+warn_unused_ignores = true
+warn_return_any = true
+show_error_codes = true
+
+[[tool.mypy.overrides]]
+module = ["kociemba", "kociemba.*"]
+ignore_missing_imports = true

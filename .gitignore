@@ -1,0 +1,48 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+ENV/
+
+# Herramientas de pruebas y calidad
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Empaquetado y distribución
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+
+# Configuración local y secretos
+.env
+.env.local
+config.local.*
+*.local.py
+
+# Registros y capturas de depuración
+*.log
+assets/captures/
+
+# Editores e IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini

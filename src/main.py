@@ -602,12 +602,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (CameraError, SolverError) as error:
         print(f"Error de configuracion: {error}", file=sys.stderr)
         return 2
+    except cv2.error as error:
+        print(f"Error de OpenCV: {error}", file=sys.stderr)
+        return 3
 
     try:
         application.run()
     except CameraError as error:
         print(f"Error de camara: {error}", file=sys.stderr)
         return 2
+    except cv2.error as error:
+        print(
+            "Error de interfaz grafica: no se pudo crear o actualizar la ventana.\n"
+            "Asegurate de ejecutar con un entorno de escritorio y de tener "
+            "instalado opencv-python (no la variante headless).\n"
+            f"Detalle: {error}",
+            file=sys.stderr,
+        )
+        return 3
     except KeyboardInterrupt:
         print("\nInterrumpido por el usuario.")
         return 130

@@ -144,7 +144,8 @@ R'
 Gira la cara derecha 90 grados en sentido antihorario
 ```
 
-- **ESPACIO** o **ENTER**: aplicar el movimiento y pasar al siguiente.
+- **ESPACIO**: marcar el movimiento como aplicado y pasar al siguiente.
+- **ENTER** o **N**: avanzar sin haber pulsado ESPACIO (útil si te saltas uno).
 - **B**: volver al movimiento anterior si te has equivocado.
 - `R`: reiniciar el escaneo desde cero.
 
@@ -235,7 +236,7 @@ El escaneo depende de ti (seis capturas). El cálculo suele tardar menos de un
 segundo en un ordenador moderno.
 
 **¿La solución es la más corta posible?**
-No necesariamente, pero es correcta y normalmente de 20 movimientos o menos.
+No necesariamente, pero es correcta y normalmente alrededor de 20 movimientos.
 
 **¿Se guarda alguna imagen o dato?**
 No. Todo el procesamiento ocurre en tu equipo y no se envía nada a internet.

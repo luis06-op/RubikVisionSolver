@@ -144,7 +144,9 @@ luz o el encuadre y vuelve a intentarlo. Al terminar las seis caras se muestra
 el desarrollo plano; revísalo y pulsa ESPACIO para resolver.
 
 La solución aparece como una secuencia de movimientos. Cada paso indica la cara
-y el sentido del giro; usa ESPACIO/ENTER para avanzar y `B` para retroceder.
+y el sentido del giro; aplica el movimiento en el cubo y pulsa **ESPACIO** para
+marcarlo como hecho y pasar al siguiente. `ENTER`, `N` y `→` avanzan del mismo
+modo fuera del escaneo, y `B` retrocede.
 
 ### Teclas
 
@@ -286,7 +288,7 @@ RubikVisionSolver/
 - La cámara debe estar en color y con una exposición razonable; una webcam muy
   saturada o con viñeteado fuerte puede requerir ajustes.
 - La solución de Kociemba no siempre es la más corta posible, pero sí correcta
-  y normalmente de 20 movimientos o menos.
+  y normalmente alrededor de 20 movimientos.
 - La ventana de vídeo necesita un entorno gráfico; la lógica y las pruebas
   funcionan sin él.
 

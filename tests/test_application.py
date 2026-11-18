@@ -12,8 +12,10 @@ Ejecutar con::
 
 from __future__ import annotations
 
+import cv2
 import numpy as np
 import pytest
+from src import main as main_module
 from src.camera import CameraConfig, CameraError, CameraHandler, ROIConfig
 from src.cube_state import SCAN_ORDER, Color, CubeModel, Face
 from src.detector import ColorDetector
@@ -391,6 +393,26 @@ class TestCommandLine:
     def test_camera_configuration_errors_are_reported(self) -> None:
         assert main(["--width", "0"]) == 2
         assert main(["--fps", "0"]) == 2
+
+    def test_gui_failure_is_reported(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def explode(_self: Application) -> None:
+            raise cv2.error("La funcion no esta implementada")
+
+        monkeypatch.setattr(Application, "run", explode)
+        assert main([]) == 3
+        assert "interfaz grafica" in capsys.readouterr().err
+
+    def test_probe_camera_failure_is_reported(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        def explode(_config: CameraConfig) -> int:
+            raise cv2.error("No se pudo abrir el dispositivo")
+
+        monkeypatch.setattr(main_module, "probe_camera", explode)
+        assert main(["--probe-camera"]) == 3
+        assert "OpenCV" in capsys.readouterr().err
 
 
 class TestCameraDependency:

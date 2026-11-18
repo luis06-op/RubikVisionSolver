@@ -25,6 +25,7 @@ Examples:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import sys
 import time
 from collections.abc import Sequence
@@ -167,12 +168,14 @@ class Application:
 
         Raises:
             CameraError: Si la cámara no se puede abrir al inicio.
+            cv2.error: Si el entorno gráfico no permite abrir o actualizar la ventana.
         """
-        self.camera.open()
-        cv2.namedWindow(self.renderer.window_name, cv2.WINDOW_NORMAL)
         pending = KeyAction.NONE
         try:
+            self.camera.open()
+            cv2.namedWindow(self.renderer.window_name, cv2.WINDOW_NORMAL)
             while self.state is not AppState.QUIT:
+                started = time.perf_counter()
                 if self.state is AppState.ERROR:
                     frame = (
                         self._last_frame
@@ -189,10 +192,17 @@ class Application:
 
                 shown = self.process(frame, pending)
                 cv2.imshow(self.renderer.window_name, shown)
-                pending = parse_key(cv2.waitKey(self.camera.config.frame_interval_ms))
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                delay = max(1, round(self.camera.config.frame_interval_ms - elapsed_ms))
+                pending = parse_key(cv2.waitKeyEx(delay))
+                # Algunos backends (p. ej. Wayland nativo) no ofrecen esta propiedad.
+                with contextlib.suppress(cv2.error):
+                    if cv2.getWindowProperty(self.renderer.window_name, cv2.WND_PROP_VISIBLE) == 0:
+                        self.state = AppState.QUIT
         finally:
             self.camera.release()
-            cv2.destroyAllWindows()
+            with contextlib.suppress(cv2.error):
+                cv2.destroyAllWindows()
 
     def process(self, frame: np.ndarray, action: KeyAction = KeyAction.NONE) -> np.ndarray:
         """Procesa un fotograma y una acción de teclado.
@@ -205,7 +215,7 @@ class Application:
             action: Acción del usuario para este fotograma.
 
         Returns:
-            Fotograma con la interfaz dibujada.
+            Copia con la interfaz dibujada; el fotograma original no se modifica.
         """
         if self.state is AppState.SCANNING:
             self._analyse(frame)
@@ -214,7 +224,10 @@ class Application:
 
         self._handle_key(action)
         self._advance_solving()
-        return self._render(frame)
+        # El renderizador dibuja in situ; conserva la captura original para
+        # reintentos, pantallas de error y llamadas repetidas desde pruebas.
+        output = frame.copy() if self.detector.is_valid_frame(frame) else self._blank_frame()
+        return self._render(output)
 
     # -- Análisis ----------------------------------------------------------
 
@@ -416,8 +429,8 @@ class Application:
             frame = self._blank_frame()
 
         if self.state is AppState.SCANNING:
-            message = self._message or self._illumination_hint
-            level = self._level if self._message else MessageLevel.WARNING
+            message = self._illumination_hint or self._message
+            level = MessageLevel.WARNING if self._illumination_hint else self._level
             scan_view = ScanView(
                 current_face=self.current_face,
                 instruction=(
@@ -445,6 +458,7 @@ class Application:
                 report=report,
                 up_face=Face.U,
                 front_face=Face.F,
+                message=self._message if self._level is MessageLevel.ERROR else "",
             )
             return self.renderer.draw_validation(frame, validation_view)
 

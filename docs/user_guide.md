@@ -145,8 +145,9 @@ Gira la cara derecha 90 grados en sentido antihorario
 ```
 
 - **ESPACIO**: marcar el movimiento como aplicado y pasar al siguiente.
-- **ENTER** o **N**: avanzar sin haber pulsado ESPACIO (útil si te saltas uno).
-- **B**: volver al movimiento anterior si te has equivocado.
+- **ENTER**, **N** o **→**: confirmar y avanzar igual que ESPACIO.
+- **B**: volver al movimiento anterior. No deshace el giro físico; corrige el
+  cubo antes de volver a ejecutar ese paso.
 - `R`: reiniciar el escaneo desde cero.
 
 La notación es la de Singmaster:
@@ -158,8 +159,14 @@ La notación es la de Singmaster:
 | `'` | 90° en sentido antihorario. |
 | `2` | 180° (media vuelta). |
 
-Al terminar el último movimiento, la aplicación muestra la pantalla de cubo
-resuelto. Pulsa `R` si quieres escanear otro cubo.
+La guía mantiene la cámara a la izquierda y el movimiento a la derecha. La
+flecha indica el sentido **mirando de frente la cara que debes girar**, no
+necesariamente desde la vista frontal de la cámara. En la parte inferior verás
+los próximos movimientos y el progreso de los pasos confirmados.
+
+Al confirmar el último movimiento, aparece «Secuencia completada». Comprueba
+las seis caras: la aplicación no verifica automáticamente los giros mediante
+vídeo. Pulsa `R` si quieres escanear otro cubo.
 
 ---
 
@@ -168,7 +175,7 @@ resuelto. Pulsa `R` si quieres escanear otro cubo.
 | Tecla | Acción |
 |---|---|
 | `ESPACIO` | Capturar la cara, confirmar el esquema o avanzar de movimiento. |
-| `ENTER`, `N`, `→` | Confirmar o avanzar. |
+| `ENTER`, `N`, `→` | Confirmar o avanzar fuera del escaneo. |
 | `B`, `←` | Movimiento anterior. |
 | `R` | Reiniciar el escaneo / reintentar la cámara. |
 | `M` | Ver u ocultar la máscara de colores (depuración). |

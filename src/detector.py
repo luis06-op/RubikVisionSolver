@@ -353,14 +353,21 @@ class ColorDetector:
             DetectorError: Si el fotograma no es una imagen BGR válida.
         """
         self._require_frame(frame)
-        working = frame
+        grid = self.grid_rect(frame.shape)
+        # Conserva el halo del filtro para obtener los mismos píxeles que al
+        # filtrar la imagen completa, también con márgenes de celda de cero.
+        radius = self.denoise_kernel // 2
+        x0, y0 = max(0, grid.x - radius), max(0, grid.y - radius)
+        x1 = min(frame.shape[1], grid.x2 + radius)
+        y1 = min(frame.shape[0], grid.y2 + radius)
+        working = frame[y0:y1, x0:x1]
         if self.denoise_kernel > 1:
-            working = cv2.medianBlur(frame, self.denoise_kernel)
+            working = cv2.medianBlur(working, self.denoise_kernel)
         hsv = cv2.cvtColor(working, cv2.COLOR_BGR2HSV)
 
         samples: list[FaceletSample] = []
         for index, rect in enumerate(self.sample_rects(frame.shape)):
-            patch = hsv[rect.as_slice()]
+            patch = hsv[rect.y - y0 : rect.y2 - y0, rect.x - x0 : rect.x2 - x0]
             color, confidence, coverage, median = self._classify_patch(patch)
             samples.append(
                 FaceletSample(
@@ -399,16 +406,15 @@ class ColorDetector:
         """
         total = float(patch.shape[0] * patch.shape[1])
         scores: dict[Color, float] = {}
-        union = np.zeros(patch.shape[:2], dtype=bool)
+        union = np.zeros(patch.shape[:2], dtype=np.uint8)
         for color, ranges in self.ranges.items():
-            matched = np.zeros(patch.shape[:2], dtype=bool)
-            for entry in ranges:
-                in_range = entry.mask(patch).astype(bool)
-                matched |= in_range
-            union |= matched
-            scores[color] = float(np.count_nonzero(matched)) / total
+            matched = ranges[0].mask(patch)
+            for entry in ranges[1:]:
+                cv2.bitwise_or(matched, entry.mask(patch), dst=matched)
+            cv2.bitwise_or(union, matched, dst=union)
+            scores[color] = cv2.countNonZero(matched) / total
 
-        coverage = float(np.count_nonzero(union)) / total
+        coverage = cv2.countNonZero(union) / total
 
         median_channels = np.median(patch.reshape(-1, 3), axis=0)
         median_hsv = (

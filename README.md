@@ -1,4 +1,26 @@
+<p align="center">
+  <img src="docs/assets/banner.svg" width="1200" alt="RubikVisionSolver — Mira. Escanea. Resuelve. Un proyecto de luis06-op." />
+</p>
+
+<p align="center">
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-65e5c0?style=flat-square&amp;labelColor=111b27" alt="Python 3.10 o superior" /></a>
+  <a href="https://opencv.org/"><img src="https://img.shields.io/badge/Visi%C3%B3n-OpenCV-b5a2ff?style=flat-square&amp;labelColor=111b27" alt="Visión con OpenCV" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/Licencia-MIT-f2c879?style=flat-square&amp;labelColor=111b27" alt="Licencia MIT" /></a>
+  <a href="https://github.com/luis06-op"><img src="https://img.shields.io/badge/Autor-luis06--op-79c8ff?style=flat-square&amp;labelColor=111b27&amp;logo=github" alt="GitHub de luis06-op" /></a>
+</p>
+
+<p align="center">
+  <a href="#vista-previa">Vista previa</a> ·
+  <a href="#instalación">Instalación</a> ·
+  <a href="#uso">Uso</a> ·
+  <a href="#rendimiento">Rendimiento</a> ·
+  <a href="docs/user_guide.md">Guía completa</a> ·
+  <a href="#más-proyectos-de-luis06-op">Mis proyectos</a>
+</p>
+
 # RubikVisionSolver
+
+### Tu webcam. Tu cubo. Tu siguiente movimiento.
 
 Aplicación de escritorio que **escanea un cubo de Rubik con la webcam, comprueba
 que el estado sea físicamente resoluble, calcula la solución con el algoritmo de
@@ -8,8 +30,27 @@ cubo estándar y una cámara.
 
 El programa no intenta adivinar la posición del cubo: muestra una cuadrícula de
 3×3 en el centro de la imagen y el usuario coloca cada cara dentro de ella. Esto
-hace la detección mucho más robusta que un reconocimiento automático de la
-geometría y permite usar cámaras y luces domésticas.
+permite controlar el encuadre y usar cámaras y luces domésticas.
+
+![Flujo: captura, validación, solución y guía](docs/assets/workflow.svg)
+
+## Vista previa
+
+**Una interfaz que deja ver lo importante.** Encuadre limpio, lectura de las
+nueve celdas, orientación de referencia y una instrucción por movimiento.
+
+<table>
+  <tr>
+    <td width="50%"><strong>01 · Escanea con confianza</strong><br /><br /><img src="docs/assets/scanning.png" alt="Escaneo: nueve celdas reconocidas, lista de caras y controles" /></td>
+    <td width="50%"><strong>02 · Comprueba tu cubo</strong><br /><br /><img src="docs/assets/validation.png" alt="Validación: desarrollo plano de las seis caras y orientación del cubo" /></td>
+  </tr>
+  <tr>
+    <td colspan="2"><strong>03 · Un giro a la vez</strong><br /><br /><img src="docs/assets/guiding.png" alt="Guía: cámara visible a la izquierda, notación L2 e instrucciones a la derecha" /></td>
+  </tr>
+</table>
+
+> Capturas del renderizador real con un cubo **sintético**; no son fotografías de
+> una webcam. Puedes regenerarlas sin cámara con `python -m scripts.preview`.
 
 ---
 
@@ -33,6 +74,8 @@ geometría y permite usar cámaras y luces domésticas.
   delante y hacia atrás.
 - Diagnóstico de iluminación en pantalla y vista de depuración de la máscara
   HSV para calibrar colores.
+- Interfaz azul oscuro con acentos menta/violeta, cámara visible durante la guía,
+  indicadores de lectura, flechas de giro y próximos movimientos.
 - Código tipado, sin dependencias de interfaz en la lógica y con máquina de
   estados comprobable sin cámara.
 
@@ -81,7 +124,7 @@ probar la lógica completa con fotogramas sintéticos.
 | `VALIDATING` | Se muestra el desarrollo plano y el informe de validez. ESPACIO confirma. | A `SOLVING` si el cubo es válido. |
 | `SOLVING` | Se anuncia la espera en un fotograma y se calcula en el siguiente. | A `GUIDING` o `FINISHED`. |
 | `GUIDING` | Se muestra el movimiento actual y la instrucción física. | Al superar el último movimiento. |
-| `FINISHED` | El cubo está resuelto; `R` inicia otro escaneo. | — |
+| `FINISHED` | La secuencia está completada; comprueba tu cubo. `R` inicia otro escaneo. | — |
 | `ERROR` | Fallo de cámara o de imagen; `R` reintenta. | — |
 
 ---
@@ -146,7 +189,8 @@ el desarrollo plano; revísalo y pulsa ESPACIO para resolver.
 La solución aparece como una secuencia de movimientos. Cada paso indica la cara
 y el sentido del giro; aplica el movimiento en el cubo y pulsa **ESPACIO** para
 marcarlo como hecho y pasar al siguiente. `ENTER`, `N` y `→` avanzan del mismo
-modo fuera del escaneo, y `B` retrocede.
+modo fuera del escaneo, y `B` retrocede en las instrucciones. Retroceder no
+deshace físicamente un giro: corrígelo en el cubo antes de repetir el paso.
 
 ### Teclas
 
@@ -246,6 +290,27 @@ invariantes del cubo, el adaptador de Kociemba, la captura con un dispositivo
 simulado y el flujo completo de la máquina de estados, incluidos los caminos de
 error.
 
+## Rendimiento
+
+El detector filtra y convierte a HSV **solo la cuadrícula y el margen necesario
+para el filtro**, en lugar de procesar toda la imagen. La clasificación usa
+máscaras de 8 bits sin conversiones booleanas intermedias. Las superficies y
+medidas de texto de la UI se reutilizan mediante cachés limitadas.
+
+El bucle descuenta el tiempo de captura y procesamiento de la espera entre
+fotogramas. También conserva la captura original para que el dibujo de la
+interfaz no contamine el siguiente análisis ni las pantallas de recuperación.
+
+```bash
+python -m scripts.benchmark             # mediana y p95 a 480p, 720p y 1080p
+python -m scripts.benchmark --frames 300
+python -m scripts.preview              # exportar las siete pantallas sin webcam
+```
+
+El benchmark usa imágenes sintéticas, diez iteraciones de calentamiento y un
+hilo de OpenCV. Mide procesamiento; **no mide los FPS de la webcam**. Consulta
+[las mediciones y el método](docs/performance.md).
+
 ---
 
 ## Estructura del proyecto
@@ -265,8 +330,15 @@ RubikVisionSolver/
 │   ├── test_camera.py
 │   ├── test_cube_state.py
 │   ├── test_detector.py
+│   ├── test_optimizations.py
+│   ├── test_ui_renderer.py
 │   └── test_solver.py
+├── scripts/
+│   ├── benchmark.py       # medición reproducible sin cámara
+│   └── preview.py         # exportación de capturas sintéticas
 ├── docs/
+│   ├── assets/           # banner, tarjetas SVG y capturas de la interfaz
+│   ├── performance.md    # mediciones y alcance del benchmark
 │   └── user_guide.md      # guía paso a paso para el usuario final
 ├── requirements.txt
 ├── requirements-dev.txt
@@ -291,7 +363,29 @@ RubikVisionSolver/
   y normalmente alrededor de 20 movimientos.
 - La ventana de vídeo necesita un entorno gráfico; la lógica y las pruebas
   funcionan sin él.
+- La guía avanza por confirmación manual: no verifica por cámara que hayas
+  ejecutado cada giro. Al terminar, comprueba las seis caras.
+
+## Más proyectos de luis06-op
+
+Una selección de mis proyectos públicos: gestión forestal, educación, comercio
+y gráficos en tiempo real. Cada tarjeta abre su repositorio.
+
+<table>
+  <tr>
+    <td width="50%"><a href="https://github.com/luis06-op/ForestID_V2"><img src="docs/assets/project-forestid.svg" alt="ForestID V2 — inventario forestal y trazabilidad del arbolado" /></a></td>
+    <td width="50%"><a href="https://github.com/luis06-op/ARIS-V2"><img src="docs/assets/project-aris.svg" alt="ARIS 2.0 — gestión documental y trazabilidad pedagógica" /></a></td>
+  </tr>
+  <tr>
+    <td><a href="https://github.com/luis06-op/minervox-pos"><img src="docs/assets/project-minervox.svg" alt="Minervox POS — punto de venta, facturación y control de cartera" /></a></td>
+    <td><a href="https://github.com/luis06-op/gpu-lab"><img src="docs/assets/project-gpulab.svg" alt="GPU Lab — animaciones, modelos 3D y cómputo en GPU" /></a></td>
+  </tr>
+</table>
+
+<p align="center"><a href="https://github.com/luis06-op?tab=repositories">Ver todos mis repositorios →</a></p>
 
 ## Licencia
 
 MIT. Consulta [LICENSE](LICENSE).
+
+<p align="center"><sub>Diseñado para aprender, experimentar y resolver · <a href="https://github.com/luis06-op">luis06-op</a></sub></p>

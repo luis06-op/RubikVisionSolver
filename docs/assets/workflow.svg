@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="150" viewBox="0 0 1200 150" role="img" aria-labelledby="title desc">
+  <title id="title">De seis capturas a una solución guiada</title>
+  <desc id="desc">01 Escanea las caras. 02 Valida colores y piezas. 03 Resuelve con Kociemba. 04 Sigue cada movimiento.</desc>
+  <rect width="1200" height="150" rx="18" fill="#101823"/>
+  <g font-family="Segoe UI, Ubuntu, Arial, sans-serif">
+    <g fill="#65e5c0" font-size="15" font-weight="700"><text x="30" y="37">01 / CAPTURA</text><text x="330" y="37">02 / VALIDACIÓN</text><text x="630" y="37">03 / SOLUCIÓN</text><text x="930" y="37">04 / GUÍA</text></g>
+    <g fill="#eef5fa" font-size="24" font-weight="600"><text x="30" y="77">Seis caras.</text><text x="330" y="77">Un cubo posible.</text><text x="630" y="77">Un algoritmo.</text><text x="930" y="77">Tu siguiente giro.</text></g>
+    <g fill="#94a7bf" font-size="14"><text x="30" y="110">U → L → F → R → B → D</text><text x="330" y="110">Colores, piezas y paridad</text><text x="630" y="110">Kociemba · dos fases</text><text x="930" y="110">Aplica, confirma y avanza</text></g>
+  </g>
+  <path d="M300 28V122M600 28V122M900 28V122" stroke="#2c3c50"/>
+</svg>

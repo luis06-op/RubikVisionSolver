@@ -23,6 +23,7 @@ import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from typing import Final
 
 import cv2
@@ -48,15 +49,16 @@ WINDOW_NAME: Final[str] = "RubikVisionSolver"
 
 # -- Paleta (BGR) -----------------------------------------------------------
 
-_BG: Final[tuple[int, int, int]] = (18, 18, 18)
-_TEXT: Final[tuple[int, int, int]] = (238, 238, 238)
-_MUTED: Final[tuple[int, int, int]] = (168, 168, 168)
-_ACCENT: Final[tuple[int, int, int]] = (0, 201, 255)
-_OK: Final[tuple[int, int, int]] = (96, 200, 96)
-_ERROR: Final[tuple[int, int, int]] = (80, 80, 240)
-_WARNING: Final[tuple[int, int, int]] = (0, 176, 255)
-_DARK: Final[tuple[int, int, int]] = (42, 42, 42)
-_BORDER: Final[tuple[int, int, int]] = (225, 225, 225)
+_BG: Final[tuple[int, int, int]] = (25, 17, 13)
+_TEXT: Final[tuple[int, int, int]] = (250, 245, 237)
+_MUTED: Final[tuple[int, int, int]] = (181, 163, 147)
+_ACCENT: Final[tuple[int, int, int]] = (193, 232, 91)
+_VIOLET: Final[tuple[int, int, int]] = (250, 151, 167)
+_OK: Final[tuple[int, int, int]] = (171, 218, 92)
+_ERROR: Final[tuple[int, int, int]] = (133, 125, 255)
+_WARNING: Final[tuple[int, int, int]] = (115, 204, 255)
+_DARK: Final[tuple[int, int, int]] = (43, 32, 25)
+_BORDER: Final[tuple[int, int, int]] = (72, 54, 43)
 
 #: Colores BGR aproximados de cada pegatina para dibujar la cuadrícula.
 STICKER_BGR: Final[dict[Color, tuple[int, int, int]]] = {
@@ -67,6 +69,22 @@ STICKER_BGR: Final[dict[Color, tuple[int, int, int]]] = {
     Color.BLUE: (230, 88, 40),
     Color.GREEN: (62, 196, 62),
 }
+
+
+@lru_cache(maxsize=24)
+def _solid(height: int, width: int, color: tuple[int, int, int]) -> np.ndarray:
+    """Reutiliza superficies constantes con una caché de tamaño limitado."""
+    image = np.empty((height, width, 3), dtype=np.uint8)
+    image[:] = color
+    image.flags.writeable = False
+    return image
+
+
+@lru_cache(maxsize=2048)
+def _text_size(text: str, scale: float, thickness: int = 1) -> tuple[int, int]:
+    """Evita medir de nuevo etiquetas estáticas en cada fotograma."""
+    size, _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_DUPLEX, scale, thickness)
+    return int(size[0]), int(size[1])
 
 
 class MessageLevel(Enum):
@@ -134,6 +152,7 @@ def parse_key(key: int) -> KeyAction:
     return _KEY_MAP.get(key, KeyAction.NONE)
 
 
+@lru_cache(maxsize=512)
 def to_ascii(text: str) -> str:
     """Convierte texto Unicode a ASCII apto para las fuentes de OpenCV.
 
@@ -200,12 +219,14 @@ class ValidationView:
         report: Resultado de la validación.
         up_face: Cara que debe quedar arriba al resolver.
         front_face: Cara que debe quedar hacia el usuario.
+        message: Error del solucionador que debe mostrarse al reintentar.
     """
 
     model: CubeModel
     report: ValidationReport
     up_face: Face
     front_face: Face
+    message: str = ""
 
 
 @dataclass(frozen=True)
@@ -238,8 +259,8 @@ class _Layout:
     def from_frame(cls, frame: np.ndarray) -> _Layout:
         """Calcula la maquetación a partir del fotograma."""
         height, width = int(frame.shape[0]), int(frame.shape[1])
-        scale = max(0.62, min(1.6, height / 720.0))
-        return cls(width, height, scale, round(14 * scale))
+        scale = max(0.5, min(1.6, height / 720.0, width / 1100.0))
+        return cls(width, height, scale, round(22 * scale))
 
     def px(self, value: float) -> int:
         """Escala una medida de referencia (pensada para 720p)."""
@@ -296,13 +317,19 @@ class UIRenderer:
         self._draw_header(frame, layout, "Escaneo de caras", self._progress_text(view))
         self._draw_grid(frame, layout, view)
         self._draw_face_checklist(frame, layout, view)
+        self._draw_scan_status(frame, layout, view)
         self._draw_footer(frame, layout, view.instruction, view.message, view.level)
         if self.show_mask and view.mask is not None:
-            self._draw_mask_inset(frame, layout, view.mask)
+            mask = view.mask
+            if view.cells and mask.shape == frame.shape:
+                mask = mask[
+                    view.cells[0].y : view.cells[-1].y2, view.cells[0].x : view.cells[-1].x2
+                ]
+            self._draw_mask_inset(frame, layout, mask)
         self._draw_key_hints(
             frame,
             layout,
-            "ESPACIO capturar cara   |   R reiniciar   |   Q salir",
+            "ESPACIO  Capturar   |   M  Colores   |   R  Reiniciar   |   Q  Salir",
         )
         return frame
 
@@ -317,34 +344,55 @@ class UIRenderer:
             El mismo fotograma con la interfaz superpuesta.
         """
         layout = _Layout.from_frame(frame)
+        self._dim(frame, 0.9)
         self._draw_header(
             frame,
             layout,
             "Verificacion del cubo",
-            "Caras escaneadas: 6/6",
+            "6 caras capturadas  /  Revisa los colores antes de continuar",
         )
 
-        net_cell = layout.px(26)
-        net_width = 12 * net_cell
-        net_height = 9 * net_cell
-        net_x = layout.margin + layout.px(10)
-        net_y = max(layout.px(110), (layout.height - net_height) // 2)
+        top = layout.px(128)
+        card_height = layout.height - top - layout.px(64)
+        net_panel = Rect(layout.margin, top, int(layout.width * 0.43) - layout.margin, card_height)
+        self._panel(frame, net_panel, 1.0)
+        self._put_text(
+            frame,
+            "MAPA DE TU CUBO",
+            (net_panel.x + layout.px(20), top + layout.px(34)),
+            layout.font(0.46),
+            _MUTED,
+        )
+        net_cell = max(
+            4, min((net_panel.width - layout.px(32)) // 12, (card_height - layout.px(120)) // 9)
+        )
+        net_x = net_panel.x + (net_panel.width - 12 * net_cell) // 2
+        net_y = top + (card_height - 9 * net_cell) // 2
         self._draw_net(frame, view.model, net_x, net_y, net_cell)
+        self._put_text(
+            frame,
+            "U arriba / F al frente",
+            (net_panel.center[0], net_panel.y2 - layout.px(24)),
+            layout.font(0.42),
+            _MUTED,
+            anchor="center",
+        )
 
         if view.report.is_valid:
             up_color = view.model.center(view.up_face)
             front_color = view.model.center(view.front_face)
-            heading = "Cubo valido: se puede resolver"
+            heading = "Todo listo para resolver"
             heading_color = _OK
             lines = [
-                "Comprueba las caras del esquema. Si no coinciden, pulsa R.",
+                "Los colores y las piezas forman un cubo valido.",
+                "Comprueba que el mapa coincida con tu cubo.",
                 "",
                 f"Mantén arriba el centro {self._color_name(up_color)}.",
                 f"Orienta hacia ti el centro {self._color_name(front_color)}.",
                 "",
-                "Pulsa ESPACIO para calcular la solucion.",
+                view.message or "Pulsa ESPACIO para calcular la solucion.",
             ]
-            line_colors = [_TEXT] * len(lines)
+            line_colors = [_TEXT] * (len(lines) - 1) + [_ERROR if view.message else _ACCENT]
         else:
             heading = "El cubo no es resoluble"
             heading_color = _ERROR
@@ -356,31 +404,28 @@ class UIRenderer:
             ]
             line_colors = [_ERROR if line in view.report.messages else _TEXT for line in lines]
 
-        panel_x = net_x + net_width + layout.px(24)
+        panel_x = net_panel.x2 + layout.px(18)
         panel_width = layout.width - panel_x - layout.margin
-        if panel_width < layout.px(300):
-            panel_width = layout.width - 2 * layout.margin
-            panel_x = layout.margin
-            net_y = layout.px(96)
-            net_height = min(net_height, max(layout.px(90), layout.height // 3))
-        panel_height = max(net_height, layout.px(120) + layout.px(28) * len(lines))
-        panel_height = min(panel_height, layout.height - layout.px(84))
-        panel = Rect(panel_x, net_y, max(panel_width, layout.px(200)), panel_height)
-        self._panel(frame, panel, alpha=0.88)
+        panel = Rect(panel_x, top, panel_width, card_height)
+        self._panel(frame, panel, alpha=1.0)
 
         text_x = panel.x + layout.px(16)
-        text_y = panel.y + layout.px(30)
-        self._put_text(
+        text_y = panel.y + layout.px(40)
+        text_y = self._draw_paragraph(
             frame,
             heading,
             (text_x, text_y),
-            layout.font(0.62),
+            panel.width - layout.px(32),
+            layout.font(0.7),
             heading_color,
-            thickness=2,
+            max_lines=2,
         )
-        text_y += layout.px(30)
+        text_y += layout.px(28)
 
         for line, line_color in zip(lines, line_colors, strict=True):
+            available = int((panel.y2 - layout.px(24) - text_y) / (32 * layout.font(0.48)))
+            if available < 1:
+                break
             if not line:
                 text_y += layout.px(16)
                 continue
@@ -391,13 +436,16 @@ class UIRenderer:
                 panel.width - layout.px(28),
                 layout.font(0.48),
                 line_color,
-                max_lines=3,
+                max_lines=min(3, available),
             )
+            text_y += layout.px(10)
 
         self._draw_key_hints(
             frame,
             layout,
-            "ESPACIO continuar   |   R reescanear   |   Q salir",
+            "ESPACIO  Resolver   |   R  Reescanear   |   Q  Salir"
+            if view.report.is_valid
+            else "R  Reescanear   |   Q  Salir",
         )
         return frame
 
@@ -464,100 +512,173 @@ class UIRenderer:
         layout = _Layout.from_frame(frame)
         total = view.solution.move_count
         current = view.solution.moves[view.index]
-        self._dim(frame, 0.5)
+        top = layout.px(128)
+        bottom = layout.height - layout.px(164)
+        left = Rect(layout.margin, top, int(layout.width * 0.43) - layout.margin, bottom - top)
+        self._camera_preview(frame, left, layout)
         self._draw_header(
             frame,
             layout,
             "Resolucion guiada",
-            f"Movimiento {view.index + 1} de {total}",
-        )
-
-        panel = Rect(
-            layout.margin,
-            layout.px(96),
-            layout.width - 2 * layout.margin,
-            layout.px(310),
-        )
-        self._panel(frame, panel, alpha=0.82)
-
-        reference = (
-            f"Referencia: centro {self._color_name(view.up_color)} arriba, "
-            f"centro {self._color_name(view.front_color)} al frente"
+            f"Paso {view.index + 1:02d} de {total:02d}  /  Tu cubo, movimiento a movimiento",
         )
         self._put_text(
             frame,
-            to_ascii(reference),
-            (panel.x + layout.px(20), panel.y + layout.px(26)),
-            layout.font(0.46),
-            _MUTED,
+            "CAMARA EN VIVO",
+            (left.x + layout.px(16), top + layout.px(28)),
+            layout.font(0.4),
+            _ACCENT,
+        )
+        reference = (
+            f"Arriba: {self._color_name(view.up_color)}  /  "
+            f"Frente: {self._color_name(view.front_color)}"
+        )
+        self._draw_paragraph(
+            frame,
+            reference,
+            (left.x + layout.px(16), left.y2 - layout.px(38)),
+            left.width - layout.px(32),
+            layout.font(0.44),
+            _TEXT,
+            max_lines=2,
         )
 
-        notation_scale = 2.4 * layout.scale
+        panel_x = left.x2 + layout.px(18)
+        panel = Rect(panel_x, top, layout.width - layout.margin - panel_x, left.height)
+        self._panel(frame, panel, 1.0)
+        x = panel.x + layout.px(24)
+        self._put_text(
+            frame,
+            "AHORA / " + current.hint.upper(),
+            (x, top + layout.px(34)),
+            layout.font(0.46),
+            _VIOLET,
+        )
         self._put_text(
             frame,
             current.notation,
-            (panel.x + layout.px(30), panel.y + layout.px(150)),
-            notation_scale,
-            _ACCENT,
-            thickness=max(2, round(3 * layout.scale)),
-        )
-
-        description_x = panel.x + layout.px(170)
-        description_width = panel.width - layout.px(196)
-        text_y = panel.y + layout.px(66)
-        text_y = self._draw_paragraph(
-            frame,
-            current.description,
-            (description_x, text_y),
-            description_width,
-            layout.font(0.62),
+            (x, top + layout.px(132)),
+            layout.font(2.6),
             _TEXT,
+            thickness=max(2, layout.px(3)),
         )
-        text_y += layout.px(6)
+        # Flecha vista de frente a la cara indicada; la cara trasera se mira
+        # desde atrás, no desde la perspectiva frontal de la webcam.
+        cx, cy = panel.x2 - layout.px(86), top + layout.px(96)
+        radius = layout.px(40)
+        start, end = (35, 300) if current.is_prime else (-120, 145)
+        points = np.asarray(
+            cv2.ellipse2Poly((cx, cy), (radius, radius), 0, start, end, 8), dtype=np.int32
+        )
+        if current.is_prime:
+            points = points[::-1].copy()
+        cv2.polylines(frame, [points], False, _ACCENT, max(2, layout.px(3)), cv2.LINE_AA)
+        cv2.arrowedLine(
+            frame,
+            tuple(points[-3]),
+            tuple(points[-1]),
+            _ACCENT,
+            max(2, layout.px(3)),
+            cv2.LINE_AA,
+            tipLength=0.6,
+        )
+        self._put_text(
+            frame,
+            "180" if current.is_double else "90",
+            (cx, cy + layout.px(7)),
+            layout.font(0.62),
+            _ACCENT,
+            anchor="center",
+        )
+        turn = (
+            "Media vuelta"
+            if current.is_double
+            else "Sentido antihorario"
+            if current.is_prime
+            else "Sentido horario"
+        )
+        y = self._draw_paragraph(
+            frame,
+            turn,
+            (x, top + layout.px(184)),
+            panel.width - layout.px(48),
+            layout.font(0.7),
+            _TEXT,
+            max_lines=2,
+        )
         self._draw_paragraph(
             frame,
-            "Gira solo esa cara y mantén el resto del cubo quieto.",
-            (description_x, text_y),
-            description_width,
-            layout.font(0.5),
+            f"Mirando de frente la cara {current.face_name}. "
+            "Gira solo esa cara, sin cambiar la orientacion del cubo.",
+            (x, y + layout.px(12)),
+            panel.width - layout.px(48),
+            layout.font(0.48),
             _MUTED,
+            max_lines=3,
+        )
+        self._put_text(
+            frame,
+            "ESPACIO  Ya hice este giro",
+            (x, panel.y2 - layout.px(24)),
+            layout.font(0.46),
+            _ACCENT,
         )
 
-        bar = Rect(
-            panel.x + layout.px(20),
-            panel.y + panel.height - layout.px(34),
-            panel.width - layout.px(40),
-            layout.px(10),
-        )
-        self._progress_bar(frame, bar, (view.index + 1) / max(total, 1))
-
-        remaining = view.solution.moves[view.index + 1 : view.index + 6]
-        if remaining:
-            list_y = panel.y + panel.height + layout.px(30)
+        list_y = bottom + layout.px(32)
+        self._put_text(frame, "A CONTINUACION", (layout.margin, list_y), layout.font(0.4), _MUTED)
+        remaining = view.solution.moves[view.index + 1 : view.index + 7]
+        for index, move in enumerate(remaining):
+            chip = Rect(
+                layout.margin + index * layout.px(78),
+                list_y + layout.px(12),
+                layout.px(64),
+                layout.px(40),
+            )
+            self._panel(frame, chip, 1.0)
             self._put_text(
                 frame,
-                "Siguientes movimientos:",
-                (layout.margin + layout.px(10), list_y),
-                layout.font(0.46),
-                _MUTED,
+                move.notation,
+                (chip.center[0], chip.y + layout.px(27)),
+                layout.font(0.62),
+                _TEXT,
+                anchor="center",
             )
-            list_y += layout.px(26)
-            for move in remaining:
-                self._put_text(
-                    frame,
-                    move.notation,
-                    (layout.margin + layout.px(16), list_y),
-                    layout.font(0.62),
-                    _TEXT,
-                )
-                list_y += layout.px(30)
-
+        if not remaining:
+            self._put_text(
+                frame,
+                "Ultimo giro. Comprueba las seis caras.",
+                (layout.margin, list_y + layout.px(38)),
+                layout.font(0.48),
+                _ACCENT,
+            )
+        self._progress_bar(
+            frame,
+            Rect(
+                layout.margin,
+                layout.height - layout.px(50),
+                layout.width - 2 * layout.margin,
+                layout.px(4),
+            ),
+            view.index / max(total, 1),
+        )
         self._draw_key_hints(
             frame,
             layout,
-            "ESPACIO siguiente   |   B anterior   |   R reiniciar   |   Q salir",
+            "ESPACIO  Hecho   |   B  Anterior   |   R  Reiniciar   |   Q  Salir",
         )
         return frame
+
+    def _camera_preview(self, frame: np.ndarray, rect: Rect, layout: _Layout) -> None:
+        """Encaja la cámara sin estirarla y prepara el fondo de la guía."""
+        available_height = max(1, rect.height - layout.px(110))
+        ratio = min(rect.width / frame.shape[1], available_height / frame.shape[0])
+        width, height = max(1, round(frame.shape[1] * ratio)), max(1, round(frame.shape[0] * ratio))
+        preview = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+        frame[:] = _BG
+        self._panel(frame, rect, 1.0)
+        x = rect.x + (rect.width - width) // 2
+        y = rect.y + layout.px(44) + (available_height - height) // 2
+        frame[y : y + height, x : x + width] = preview
 
     def draw_finished(self, frame: np.ndarray, solution: Solution) -> np.ndarray:
         """Dibuja la pantalla final cuando el cubo está resuelto.
@@ -583,9 +704,9 @@ class UIRenderer:
         self._panel(frame, panel, alpha=0.96)
         self._put_text(
             frame,
-            "Cubo resuelto",
+            "Secuencia completada" if solution.move_count else "Cubo resuelto",
             (center_x, center_y - layout.px(30)),
-            layout.font(1.2),
+            layout.font(0.95),
             _OK,
             thickness=max(2, layout.px(2)),
             anchor="center",
@@ -596,7 +717,7 @@ class UIRenderer:
                 if solution.elapsed_ms < 1000.0
                 else f"{solution.elapsed_ms / 1000.0:.1f} s"
             )
-            detail = f"{solution.move_count} movimientos en {elapsed}"
+            detail = f"{solution.move_count} movimientos / calculo: {elapsed}"
         else:
             detail = "El cubo ya estaba resuelto"
         self._put_text(
@@ -674,55 +795,84 @@ class UIRenderer:
 
     # -- Componentes -------------------------------------------------------
 
-    def _draw_header(
-        self, frame: np.ndarray, layout: _Layout, title: str, subtitle: str
-    ) -> None:
+    def _draw_header(self, frame: np.ndarray, layout: _Layout, title: str, subtitle: str) -> None:
         """Dibuja la cabecera con el título y el progreso."""
-        panel = Rect(layout.margin, layout.margin, layout.width - 2 * layout.margin, layout.px(66))
-        self._panel(frame, panel, alpha=0.6)
+        panel = Rect(0, 0, layout.width, layout.px(96))
+        self._blend_rect(frame, panel, _BG, 1.0)
+        self._put_text(
+            frame,
+            "RUBIK / VISION",
+            (layout.margin, layout.px(28)),
+            layout.font(0.42),
+            _ACCENT,
+        )
         self._put_text(
             frame,
             title,
-            (panel.x + layout.px(16), panel.y + layout.px(28)),
+            (layout.margin, layout.px(60)),
             layout.font(0.72),
-            _ACCENT,
-            thickness=2,
+            _TEXT,
         )
         self._put_text(
             frame,
             to_ascii(subtitle),
-            (panel.x + layout.px(16), panel.y + layout.px(52)),
-            layout.font(0.5),
-            _TEXT,
+            (layout.margin, layout.px(82)),
+            layout.font(0.42),
+            _MUTED,
         )
+        steps = ("01 ESCANEAR", "02 VALIDAR", "03 RESOLVER")
+        active = 0 if "Escaneo" in title else 1 if "Verificacion" in title else 2
+        x = layout.width - layout.margin - layout.px(420)
+        if x > layout.px(400):
+            for index, label in enumerate(steps):
+                rect = Rect(
+                    x + index * layout.px(140), layout.px(30), layout.px(130), layout.px(34)
+                )
+                self._blend_rect(frame, rect, _DARK, 1.0)
+                self._put_text(
+                    frame,
+                    label,
+                    (rect.x + layout.px(10), rect.y + layout.px(22)),
+                    layout.font(0.4),
+                    _ACCENT if index == active else _MUTED,
+                )
+                if index == active:
+                    cv2.line(frame, (rect.x, rect.y2), (rect.x2, rect.y2), _ACCENT, 2)
 
     def _draw_grid(self, frame: np.ndarray, layout: _Layout, view: ScanView) -> None:
         """Dibuja la cuadrícula 3x3 con el color detectado en cada celda."""
         for rect, sample in zip(view.cells, view.samples, strict=False):
-            self._blend_rect(frame, rect, (26, 26, 26), 0.55)
-            if sample.color is not None:
-                self._blend_rect(frame, rect, STICKER_BGR[sample.color], 0.55)
             border = _OK if sample.is_confident else _WARNING
             cv2.rectangle(
                 frame,
                 (rect.x, rect.y),
                 (rect.x2 - 1, rect.y2 - 1),
                 border,
-                max(1, layout.px(2)),
+                1,
             )
             if sample.color is not None:
+                chip = Rect(
+                    rect.x + layout.px(5), rect.y2 - layout.px(24), layout.px(48), layout.px(19)
+                )
+                self._blend_rect(frame, chip, _BG, 0.9)
+                cv2.rectangle(
+                    frame,
+                    (chip.x, chip.y),
+                    (chip.x + layout.px(4), chip.y2),
+                    STICKER_BGR[sample.color],
+                    -1,
+                )
                 label = to_ascii(sample.color.name_es[:3].upper())
                 self._put_text(
                     frame,
                     label,
-                    (rect.x + layout.px(8), rect.y2 - layout.px(8)),
-                    layout.font(0.42),
-                    _BG
-                    if sample.color
-                    in (Color.WHITE, Color.YELLOW, Color.GREEN, Color.ORANGE)
-                    else _TEXT,
+                    (chip.x + layout.px(10), chip.y2 - layout.px(4)),
+                    layout.font(0.36),
+                    _TEXT,
                     thickness=1,
                 )
+        if not view.cells:
+            return
         grid = view.cells[0]
         grid_rect = Rect(
             grid.x,
@@ -734,22 +884,42 @@ class UIRenderer:
             frame,
             (grid_rect.x, grid_rect.y),
             (grid_rect.x2 - 1, grid_rect.y2 - 1),
-            _BORDER,
-            max(1, layout.px(2)),
+            _ACCENT,
+            1,
         )
+        arm = layout.px(22)
+        for x, dx in ((grid_rect.x, arm), (grid_rect.x2, -arm)):
+            for y, dy in ((grid_rect.y, arm), (grid_rect.y2, -arm)):
+                cv2.line(frame, (x, y), (x + dx, y), _ACCENT, max(2, layout.px(3)))
+                cv2.line(frame, (x, y), (x, y + dy), _ACCENT, max(2, layout.px(3)))
 
     def _draw_face_checklist(self, frame: np.ndarray, layout: _Layout, view: ScanView) -> None:
         """Dibuja la lista de caras pendientes y completadas."""
+        if not view.cells:
+            return
         scanned = dict(view.scanned)
         row_height = layout.px(34)
-        panel_width = layout.px(236)
+        panel_width = layout.px(224)
         x = layout.width - layout.margin - panel_width
         grid = view.cells[0]
+        if x < view.cells[2].x2 + layout.px(12):
+            # En encuadres estrechos, seis fichas horizontales sustituyen la lista.
+            for index, face in enumerate(SCAN_ORDER):
+                cx = layout.width // 2 + (index * 2 - 5) * layout.px(23)
+                self._put_text(
+                    frame,
+                    face.value,
+                    (cx, layout.px(126)),
+                    layout.font(0.5),
+                    _ACCENT if face in scanned else _MUTED,
+                    anchor="center",
+                )
+            return
         panel = Rect(x, grid.y, panel_width, row_height * 6 + layout.px(34))
-        self._panel(frame, panel, alpha=0.75)
+        self._panel(frame, panel, alpha=0.96)
         self._put_text(
             frame,
-            "Progreso del escaneo",
+            "TUS SEIS CARAS",
             (panel.x + layout.px(12), panel.y + layout.px(22)),
             layout.font(0.46),
             _MUTED,
@@ -784,7 +954,7 @@ class UIRenderer:
             )
             if done and color is not None:
                 swatch = Rect(
-                    panel.x + panel.width - layout.px(96),
+                    panel.x + panel.width - layout.px(26),
                     y + layout.px(6),
                     layout.px(16),
                     layout.px(16),
@@ -803,14 +973,42 @@ class UIRenderer:
                     _BORDER,
                     1,
                 )
-                self._put_text(
-                    frame,
-                    to_ascii(color.name_es),
-                    (panel.x + panel.width - layout.px(74), y + layout.px(19)),
-                    layout.font(0.42),
-                    _TEXT,
-                )
             y += row_height
+
+    def _draw_scan_status(self, frame: np.ndarray, layout: _Layout, view: ScanView) -> None:
+        """Muestra calidad de lectura sin cubrir la cuadrícula de captura."""
+        if not view.cells or view.cells[0].x < layout.px(232) + 2 * layout.margin:
+            return
+        panel = Rect(layout.margin, view.cells[0].y, layout.px(224), layout.px(230))
+        self._panel(frame, panel, 0.96)
+        x, y = panel.x + layout.px(16), panel.y + layout.px(28)
+        self._put_text(frame, "LECTURA EN VIVO", (x, y), layout.font(0.42), _MUTED)
+        ready = sum(sample.is_confident for sample in view.samples)
+        self._put_text(
+            frame,
+            f"{ready} / 9",
+            (x, y + layout.px(52)),
+            layout.font(1.1),
+            _ACCENT if ready == 9 else _WARNING,
+        )
+        self._put_text(
+            frame, "celdas reconocidas", (x, y + layout.px(78)), layout.font(0.42), _MUTED
+        )
+        self._progress_bar(
+            frame, Rect(x, y + layout.px(100), panel.width - layout.px(32), layout.px(5)), ready / 9
+        )
+        self._draw_paragraph(
+            frame,
+            "Listo para capturar" if ready == 9 else "Ajusta la luz y el encuadre",
+            (x, y + layout.px(134)),
+            panel.width - layout.px(32),
+            layout.font(0.5),
+            _TEXT,
+            max_lines=2,
+        )
+        self._put_text(
+            frame, "ESPACIO  Guardar cara", (x, panel.y2 - layout.px(18)), layout.font(0.4), _ACCENT
+        )
 
     def _draw_footer(
         self,
@@ -828,7 +1026,7 @@ class UIRenderer:
             layout.width - 2 * layout.margin,
             height,
         )
-        self._panel(frame, panel, alpha=0.78)
+        self._panel(frame, panel, alpha=0.97)
         text_x = panel.x + layout.px(16)
         text_y = panel.y + layout.px(28)
         text_y = self._draw_paragraph(
@@ -853,6 +1051,9 @@ class UIRenderer:
 
     def _draw_key_hints(self, frame: np.ndarray, layout: _Layout, hints: str) -> None:
         """Dibuja la línea de atajos en la parte inferior."""
+        self._blend_rect(
+            frame, Rect(0, layout.height - layout.px(34), layout.width, layout.px(34)), _BG, 1.0
+        )
         self._put_text(
             frame,
             to_ascii(hints),
@@ -864,9 +1065,9 @@ class UIRenderer:
 
     def _draw_mask_inset(self, frame: np.ndarray, layout: _Layout, mask: np.ndarray) -> None:
         """Dibuja la máscara de color de depuración en una esquina."""
-        size = layout.px(150)
+        size = layout.px(100)
         x = layout.width - size - layout.margin
-        y = layout.px(96)
+        y = layout.height - layout.px(280)
         small = cv2.resize(mask, (size, size), interpolation=cv2.INTER_AREA)
         region = frame[y : y + size, x : x + size]
         if region.shape[:2] == small.shape[:2]:
@@ -880,9 +1081,7 @@ class UIRenderer:
             _MUTED,
         )
 
-    def _draw_net(
-        self, frame: np.ndarray, model: CubeModel, x: int, y: int, cell: int
-    ) -> None:
+    def _draw_net(self, frame: np.ndarray, model: CubeModel, x: int, y: int, cell: int) -> None:
         """Dibuja el desarrollo plano 2D de las seis caras."""
         positions: Mapping[Face, tuple[int, int]] = {
             Face.U: (1, 0),
@@ -925,7 +1124,8 @@ class UIRenderer:
 
     def _panel(self, frame: np.ndarray, rect: Rect, alpha: float = 0.6) -> None:
         """Dibuja un rectángulo oscuro semitransparente."""
-        self._blend_rect(frame, rect, _BG, alpha)
+        self._blend_rect(frame, rect, _DARK, alpha)
+        cv2.rectangle(frame, (rect.x, rect.y), (rect.x2 - 1, rect.y2 - 1), _BORDER, 1)
 
     @staticmethod
     def _blend_rect(
@@ -934,18 +1134,18 @@ class UIRenderer:
         """Mezcla un color plano con la región indicada del fotograma."""
         if rect.width <= 0 or rect.height <= 0:
             return
-        region = frame[rect.as_slice()]
+        region = frame[max(0, rect.y) : max(0, rect.y2), max(0, rect.x) : max(0, rect.x2)]
         if region.size == 0:
             return
-        overlay = np.empty_like(region)
-        overlay[:] = color
+        if alpha >= 1.0:
+            region[:] = color
+            return
+        overlay = _solid(region.shape[0], region.shape[1], color)
         cv2.addWeighted(overlay, alpha, region, 1.0 - alpha, 0, dst=region)
 
     def _dim(self, frame: np.ndarray, alpha: float) -> None:
         """Oscurece todo el fotograma para resaltar un mensaje."""
-        overlay = np.empty_like(frame)
-        overlay[:] = _BG
-        cv2.addWeighted(overlay, alpha, frame, 1.0 - alpha, 0, dst=frame)
+        self._blend_rect(frame, Rect(0, 0, frame.shape[1], frame.shape[0]), _BG, alpha)
 
     def _progress_bar(self, frame: np.ndarray, rect: Rect, fraction: float) -> None:
         """Dibuja una barra de progreso rellena."""
@@ -989,7 +1189,7 @@ class UIRenderer:
         """
         safe = to_ascii(text)
         font = cv2.FONT_HERSHEY_DUPLEX
-        (width, height), _ = cv2.getTextSize(safe, font, scale, thickness)
+        width, height = _text_size(safe, scale, thickness)
         x, y = origin
         if anchor == "center":
             x -= width // 2
@@ -1064,7 +1264,6 @@ class UIRenderer:
         Returns:
             Lista de líneas listas para dibujar.
         """
-        font = cv2.FONT_HERSHEY_DUPLEX
         safe = to_ascii(text)
         words = safe.split()
         if not words:
@@ -1073,7 +1272,7 @@ class UIRenderer:
         current = ""
         for word in words:
             candidate = f"{current} {word}".strip()
-            width = cv2.getTextSize(candidate, font, scale, 1)[0][0]
+            width = _text_size(candidate, scale)[0]
             if width <= max_width or not current:
                 current = candidate
             else:
@@ -1085,7 +1284,7 @@ class UIRenderer:
         if len(lines) > max_lines:
             lines = lines[:max_lines]
             last = lines[-1]
-            while last and cv2.getTextSize(last + "...", font, scale, 1)[0][0] > max_width:
+            while last and _text_size(last + "...", scale)[0] > max_width:
                 last = last[:-1]
             lines[-1] = last + "..."
         return lines

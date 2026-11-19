@@ -9,6 +9,8 @@ animación 3D por movimiento, inspirada en Cyber Solver.
 - `cubejs` (MIT) para el algoritmo de dos fases; el modelo 3D es propio.
 - Guía de estilo: [DESIGN.md](DESIGN.md).
 
+**URL de producción:** <https://web-six-fawn-g49c6cx1zg.vercel.app>
+
 ## Desarrollo
 
 ```bash

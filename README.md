@@ -34,6 +34,13 @@ permite controlar el encuadre y usar cámaras y luces domésticas.
 
 ![Flujo: captura, validación, solución y guía](docs/assets/workflow.svg)
 
+## Nuevo: estudio web (sin cámara)
+
+[`web/`](web/README.md) es una interfaz web estática donde pintas los 54 colores
+en un desarrollo plano y sigues la solución con una animación 3D por giro, como
+Cyber Solver. El algoritmo corre en el navegador dentro de un Web Worker.
+Desplegada en Vercel; guía visual en [`web/DESIGN.md`](web/DESIGN.md).
+
 ## Vista previa
 
 **Una interfaz que deja ver lo importante.** Encuadre limpio, lectura de las

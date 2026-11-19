@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/components/CubeStage.tsx","./src/components/NetInput.tsx","./src/cube/geometry.ts","./src/cube/solver.ts","./src/cube/solver.worker.ts","./src/cube/types.ts","./src/cube/validation.ts","./src/types/cubejs.d.ts"],"version":"5.9.3"}

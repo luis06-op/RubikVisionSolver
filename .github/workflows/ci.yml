@@ -36,3 +36,33 @@ jobs:
         env:
           PYTHONPATH: .
         run: python -m pytest -q
+
+  web:
+    name: Estudio web · Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20", "22"]
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Comprobar tipos y animación
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Compilar para Vercel
+        run: npm run build

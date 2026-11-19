@@ -51,11 +51,17 @@ Los colores de las pegatinas son los estándar: blanco `#f8fafc`, amarillo
 
 ## 5. Movimiento
 
-- La animación del giro dura 1,8 s con 0,3 s de pausa inicial y se repite en
-  bucle; `smoothstep` evita arranques bruscos.
-- Cambiar de paso reinicia la animación desde cero.
+- **Solo gira la capa del movimiento.** La matriz de giro se aplica únicamente
+  a las 21 pegatinas de la capa activa; el resto del cubo permanece inmóvil.
+- El giro se reproduce **una vez** y se queda en la posición final (1,15 s por
+  cuarto de vuelta, 1,53 s en medios giros); `smoothstep` evita arranques
+  bruscos. Como esa posición es exactamente el estado siguiente, avanzar de
+  paso no produce saltos.
+- «Repetir» y la tecla `R` vuelven a lanzar el giro desde cero.
 - Pausa, velocidad y vista son controles explícitos con atajo de teclado.
 - Transiciones CSS de 150–350 ms; nada de rebotes largos.
+- La animación se verifica con `npm test`: la rotación de cada capa debe
+  coincidir pegatina a pegatina con la permutación lógica del modelo.
 
 ## 6. Respuesta y accesibilidad
 

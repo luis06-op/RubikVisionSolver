@@ -271,7 +271,8 @@ export default function App() {
                   <h2>{describeMove(currentMove)}</h2>
                   <p className="instruction-note">
                     Gira solo esa capa. La animación muestra el sentido desde la
-                    cara indicada, no desde la cámara frontal.
+                    cara indicada, no desde la cámara frontal. Se reproduce una
+                    vez: pulsa <kbd>R</kbd> o «Repetir» para verla de nuevo.
                   </p>
                   <div className="next-moves">
                     <p className="eyebrow">A CONTINUACIÓN</p>

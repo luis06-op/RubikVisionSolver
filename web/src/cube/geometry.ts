@@ -9,8 +9,6 @@ const ORIENT: Record<Face, [number, 1 | -1]> = {
   U: [1, 1], D: [1, -1], R: [0, 1], L: [0, -1], F: [2, 1], B: [2, -1],
 };
 
-const AXIS_OF: Record<Face, number> = { U: 1, D: 1, R: 0, L: 0, F: 2, B: 2 };
-
 const QUARTER: Record<number, [Vec3, Vec3, Vec3]> = {
   0: [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
   1: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
@@ -122,13 +120,13 @@ export function applyAlgorithm(facelets: Facelets, moves: Move[]): Facelets {
   return moves.reduce((state, move) => applyMove(state, move), [...facelets]);
 }
 
-interface Geometry {
+interface StickerGeometry {
   points: Vec3[];
   normals: Vec3[];
   polygons: Vec3[][];
 }
 
-const BASE: Geometry = (() => {
+const BASE: StickerGeometry = (() => {
   const points: Vec3[] = [];
   const normals: Vec3[] = [];
   const polygons: Vec3[][] = [];
@@ -153,6 +151,69 @@ const BASE: Geometry = (() => {
   return { points, normals, polygons };
 })();
 
+/** Mitad del lado de cada pieza: 0,494 deja una ranura fina entre piezas. */
+const CUBIE_HALF = 0.494;
+
+interface Piece {
+  vertices: Vec3[];
+  normal: Vec3;
+  /** Centro de la pieza: decide si gira con la capa activa. */
+  center: Vec3;
+  kind: "body" | "sticker";
+  /** Índice de la pegatina; -1 en el cuerpo. */
+  sticker: number;
+}
+
+/** Seis caras de una pieza del cubo (cuerpo oscuro bajo las pegatinas). */
+function cubieFaces(center: Vec3): Piece[] {
+  const pieces: Piece[] = [];
+  for (let axis = 0; axis < 3; axis += 1) {
+    for (const sign of [-1, 1] as const) {
+      const faceNormal: Vec3 = [0, 0, 0];
+      faceNormal[axis] = sign;
+      const face: Vec3 = [...center] as Vec3;
+      face[axis] += sign * CUBIE_HALF;
+      const u = (axis + 1) % 3;
+      const v = (axis + 2) % 3;
+      pieces.push({
+        vertices: ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([su, sv]) => {
+          const corner: Vec3 = [...face] as Vec3;
+          corner[u] += su * CUBIE_HALF;
+          corner[v] += sv * CUBIE_HALF;
+          return corner;
+        }),
+        normal: faceNormal,
+        center,
+        kind: "body",
+        sticker: -1,
+      });
+    }
+  }
+  return pieces;
+}
+
+/** Las 27 piezas con su cuerpo y las 54 pegatinas, listas para dibujar. */
+const PIECES: Piece[] = (() => {
+  const pieces: Piece[] = [];
+  for (const x of [-1, 0, 1]) {
+    for (const y of [-1, 0, 1]) {
+      for (const z of [-1, 0, 1]) {
+        pieces.push(...cubieFaces([x, y, z]));
+      }
+    }
+  }
+  BASE.polygons.forEach((vertices, index) => {
+    pieces.push({
+      vertices,
+      normal: BASE.normals[index],
+      center: BASE.points[index],
+      kind: "sticker",
+      sticker: index,
+    });
+  });
+  return pieces;
+})();
+
 function smoothstep(value: number): number {
   const t = Math.max(0, Math.min(1, value));
   return t * t * (3 - 2 * t);
@@ -166,12 +227,76 @@ function cross(a: Vec3, b: Vec3): Vec3 {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
-function matrixFor(move: Move | null, progress: number): [Vec3, Vec3, Vec3] {
-  if (!move) return [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
-  const base = MOVE_GEOMETRY[move.face][2];
-  const turns = move.quarters === 2 ? 2 : move.quarters === 3 ? -1 : 1;
-  const angle = -turns * base * (Math.PI / 2) * smoothstep(progress);
-  return axisAngle(normal(move.face), angle);
+export type Matrix3 = [Vec3, Vec3, Vec3];
+
+const IDENTITY: Matrix3 = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+
+/** Capa que gira: eje (0=X, 1=Y, 2=Z), coordenada de la capa y cuartos. */
+export interface TurnFrame {
+  axis: number;
+  layer: number;
+  quarterTurns: number;
+}
+
+/**
+ * Describe la capa afectada por un movimiento.
+ *
+ * La permutación lógica se construye girando `base * quarters` cuartos de
+ * vuelta; aquí se reduce al camino corto (3 -> -1) para que la animación no
+ * dé una vuelta de más y para que el final coincida con el estado siguiente.
+ */
+export function moveFrame(move: Move): TurnFrame {
+  const [axis, layer, base] = MOVE_GEOMETRY[move.face];
+  const total = (((base * move.quarters) % 4) + 4) % 4;
+  return { axis, layer, quarterTurns: total === 3 ? -1 : total };
+}
+
+/** Matriz de giro de la capa en el instante `progress` (0..1). */
+export function layerMatrix(move: Move, progress: number): Matrix3 {
+  const { axis, quarterTurns } = moveFrame(move);
+  // La permutación se genera girando sobre el eje positivo (X/Y/Z), no sobre
+  // la normal de la cara: usar la normal invertía D, L y B.
+  const direction: Vec3 = [0, 0, 0];
+  direction[axis] = 1;
+  return axisAngle(direction, quarterTurns * (Math.PI / 2) * smoothstep(progress));
+}
+
+/** Permutación destino <- origen que aplica un movimiento. */
+export function movePermutation(move: Move): number[] {
+  const permutation = PERMUTATIONS.get(`${move.face}${move.quarters}`);
+  if (!permutation) throw new Error(`Movimiento sin permutación: ${move.notation}`);
+  return permutation;
+}
+
+/** ¿La pegatina `index` pertenece a la capa que gira? */
+export function isInLayer(move: Move, index: number): boolean {
+  const { axis, layer } = moveFrame(move);
+  return BASE.points[index][axis] === layer;
+}
+
+export interface StickerFrame {
+  face: Face;
+  point: Vec3;
+  normal: Vec3;
+}
+
+/** Centro y normal de una pegatina; útil para verificar la animación. */
+export function stickerFrame(index: number): StickerFrame {
+  return {
+    face: FACES[Math.floor(index / 9)],
+    point: BASE.points[index],
+    normal: BASE.normals[index],
+  };
+}
+
+/** Índice de la pegatina que ocupa un punto con una normal dados. */
+export function frameIndex(point: Vec3, stickerNormal: Vec3): number | undefined {
+  return LOOKUP.get(key(point, stickerNormal));
+}
+
+/** Aplica una matriz de giro a un punto. */
+export function applyMatrix(matrix: Matrix3, point: Vec3): Vec3 {
+  return rotatePoint(matrix, point);
 }
 
 const VIEWS: Vec3[] = [[6, 5, 8], [-6, 5, 8], [-6, 5, -8], [6, -5, 8]];
@@ -201,39 +326,54 @@ export function drawCube(ctx: CanvasRenderingContext2D, options: DrawOptions): v
   const rightLength = Math.hypot(...right);
   right = right.map((value) => value / rightLength) as Vec3;
   const up = cross(camera, right);
-  const matrix = matrixFor(options.move, options.progress);
-  const axisIndex = options.move ? AXIS_OF[options.move.face] : -1;
-  const layer = options.move ? MOVE_GEOMETRY[options.move.face][1] : -99;
+  const frame = options.move ? moveFrame(options.move) : null;
+  const matrix = options.move ? layerMatrix(options.move, options.progress) : IDENTITY;
 
-  const stickers = BASE.polygons.map((polygon, index) => {
-    const transformed = polygon.map((vertex) => rotatePoint(matrix, vertex));
-    const faceNormal = rotatePoint(matrix, BASE.normals[index]);
-    const depth = transformed.reduce((sum, vertex) => sum + dot(vertex, camera), 0) / 4;
+  const visible = PIECES.map((piece) => {
+    // Solo las piezas de la capa activa giran; el resto mantiene su sitio.
+    const moving = frame !== null && piece.center[frame.axis] === frame.layer;
+    const local = moving ? matrix : IDENTITY;
+    const vertices = piece.vertices.map((vertex) => rotatePoint(local, vertex));
+    const faceNormal = rotatePoint(local, piece.normal);
+    const depth = vertices.reduce((sum, vertex) => sum + dot(vertex, camera), 0) / 4;
     return {
-      x: transformed.map((vertex) => dot(vertex, right)),
-      y: transformed.map((vertex) => -dot(vertex, up)),
+      x: vertices.map((vertex) => dot(vertex, right)),
+      y: vertices.map((vertex) => -dot(vertex, up)),
       depth,
-      visible: dot(faceNormal, camera) > 0.01,
-      index,
-      moving: axisIndex >= 0 && BASE.points[index][axisIndex] === layer,
+      normal: faceNormal,
+      piece,
+      moving,
     };
-  }).filter((sticker) => sticker.visible).sort((a, b) => a.depth - b.depth);
+  })
+    .filter((item) => dot(item.normal, camera) > 0.01)
+    .sort((a, b) => a.depth - b.depth);
 
   const scale = Math.min(width, height) / 5.4;
   ctx.lineJoin = "round";
-  for (const sticker of stickers) {
+  for (const item of visible) {
     ctx.beginPath();
-    sticker.x.forEach((value, index) => {
+    item.x.forEach((value, index) => {
       const px = width / 2 + value * scale;
-      const py = height / 2 + sticker.y[index] * scale;
+      const py = height / 2 + item.y[index] * scale;
       if (index === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     });
     ctx.closePath();
-    ctx.fillStyle = hexToRgba(COLOR_HEX[options.colors[sticker.index] as ColorId] ?? "#334155");
+
+    if (item.piece.kind === "body") {
+      ctx.fillStyle = item.moving ? "#101c30" : "#0a1424";
+      ctx.strokeStyle = "#050a12";
+      ctx.lineWidth = 1;
+      ctx.fill();
+      ctx.stroke();
+      continue;
+    }
+
+    const color = options.colors[item.piece.sticker];
+    ctx.fillStyle = color ? hexToRgba(COLOR_HEX[color as ColorId] ?? "#334155") : "#334155";
+    ctx.strokeStyle = item.moving ? "#5eead4" : "rgba(4, 9, 18, 0.85)";
+    ctx.lineWidth = item.moving ? 2.4 : 1.2;
     ctx.fill();
-    ctx.lineWidth = sticker.moving ? 3 : 1.5;
-    ctx.strokeStyle = sticker.moving ? "#5eead4" : "rgba(8, 15, 30, 0.9)";
     ctx.stroke();
   }
 }

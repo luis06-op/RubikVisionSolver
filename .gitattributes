@@ -1,0 +1,7 @@
+# GitHub Linguist: qué cuenta como código del proyecto
+
+# npm genera este archivo; no es código propio ni debe pesar en el reparto.
+web/package-lock.json linguist-generated=true
+
+# Capturas, GIF y diagramas que ilustran la documentación.
+docs/assets/** linguist-documentation=true

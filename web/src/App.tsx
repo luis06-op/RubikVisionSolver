@@ -262,7 +262,15 @@ export default function App() {
                   <h2 className="success-title">¡Listo!</h2>
                   <p>Comprueba las seis caras de tu cubo. La animación no verifica los giros: confía en tu vista.</p>
                   <button className="btn primary" onClick={() => setPhase("input")}>Resolver otro cubo</button>
-                  <button className="btn ghost" onClick={() => setIndex(0)}>Ver desde el inicio</button>
+                  <button
+                    className="btn ghost"
+                    onClick={() => {
+                      setIndex(0);
+                      setRunId((value) => value + 1);
+                    }}
+                  >
+                    Ver desde el inicio
+                  </button>
                 </>
               ) : currentMove ? (
                 <>

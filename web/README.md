@@ -17,9 +17,19 @@ animación 3D por movimiento, inspirada en Cyber Solver.
 cd web
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm run build      # dist/
+npm test           # verifica que cada giro anima solo su capa
 npm run typecheck
+npm run build      # dist/
 ```
+
+## Cómo funciona la animación
+
+Cada giro tiene una matriz de rotación propia que **solo se aplica a las 21
+pegatinas y 9 cuerpos de la capa activa**; el resto del cubo no se mueve. La
+matriz se deduce de la misma geometría que genera la permutación del modelo, y
+`npm test` comprueba, movimiento a movimiento, que la posición final de cada
+pieza coincide con el estado lógico. Por eso al pasar al paso siguiente no hay
+ningún salto: el final de un giro ya es el estado inicial del siguiente.
 
 ## Despliegue en Vercel
 

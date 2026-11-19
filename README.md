@@ -5,11 +5,14 @@
 <p align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-65e5c0?style=flat-square&amp;labelColor=111b27" alt="Python 3.10 o superior" /></a>
   <a href="https://opencv.org/"><img src="https://img.shields.io/badge/Visi%C3%B3n-OpenCV-b5a2ff?style=flat-square&amp;labelColor=111b27" alt="Visión con OpenCV" /></a>
+  <a href="web/README.md"><img src="https://img.shields.io/badge/Web-React%20%2B%20TS-79c8ff?style=flat-square&amp;labelColor=111b27" alt="Interfaz web con React y TypeScript" /></a>
+  <a href="https://web-six-fawn-g49c6cx1zg.vercel.app"><img src="https://img.shields.io/badge/Vercel-en%20vivo-f2c879?style=flat-square&amp;labelColor=111b27&amp;logo=vercel" alt="Desplegado en Vercel" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/Licencia-MIT-f2c879?style=flat-square&amp;labelColor=111b27" alt="Licencia MIT" /></a>
   <a href="https://github.com/luis06-op"><img src="https://img.shields.io/badge/Autor-luis06--op-79c8ff?style=flat-square&amp;labelColor=111b27&amp;logo=github" alt="GitHub de luis06-op" /></a>
 </p>
 
 <p align="center">
+  <a href="#sin-cámara-el-estudio-web">Estudio web</a> ·
   <a href="#vista-previa">Vista previa</a> ·
   <a href="#instalación">Instalación</a> ·
   <a href="#uso">Uso</a> ·
@@ -32,22 +35,104 @@ El programa no intenta adivinar la posición del cubo: muestra una cuadrícula d
 3×3 en el centro de la imagen y el usuario coloca cada cara dentro de ella. Esto
 permite controlar el encuadre y usar cámaras y luces domésticas.
 
+Si prefieres no usar la cámara, el mismo proyecto incluye un
+**[estudio web](#sin-cámara-el-estudio-web)** donde pintas los 54 colores a mano
+y sigues la solución en el navegador, sin instalar nada.
+
 ![Flujo: captura, validación, solución y guía](docs/assets/workflow.svg)
 
-## Nuevo: estudio web (sin cámara)
+---
 
-[`web/`](web/README.md) es una interfaz web estática donde pintas los 54 colores
-en un desarrollo plano y sigues la solución con una animación 3D por giro, como
-Cyber Solver. El algoritmo corre en el navegador dentro de un Web Worker.
+## Sin cámara: el estudio web
 
-**Pruébala ya:** <https://web-six-fawn-g49c6cx1zg.vercel.app>
+<p align="center">
+  <a href="https://web-six-fawn-g49c6cx1zg.vercel.app"><img src="https://img.shields.io/badge/RubikVision%20Studio-%E2%96%B6%20Abrir%20la%20web-5eead4?style=for-the-badge&amp;labelColor=0a1223" alt="Abrir RubikVision Studio en el navegador" /></a>
+</p>
 
-Guía visual del proyecto: [`web/DESIGN.md`](web/DESIGN.md).
+¿Sin webcam a mano? **Pinta los 54 colores de tu cubo** en un desarrollo plano y
+sigue una **solución corta tipo Kociemba** con una animación 3D para cada giro,
+igual que las apps de tipo Cyber Solver. Todo ocurre dentro del navegador: no hay
+que instalar nada, no se sube ninguna foto y los colores no salen de tu equipo.
+
+<p align="center">
+  <img src="docs/assets/web/guia.png" width="900" alt="Guía 3D: la capa izquierda gira mientras el resto del cubo permanece quieto" />
+</p>
+
+<table>
+  <tr>
+    <td width="45%" valign="top">
+      <strong>1 · Pinta tu cubo</strong><br /><br />
+      Elige un color en la paleta y toca cada pegatina del desarrollo plano. La
+      vista previa 3D se actualiza al instante y el contador avisa si falta
+      alguna pieza o si un color aparece más de nueve veces.
+    </td>
+    <td width="55%" valign="top">
+      <strong>2 · Mira el giro</strong><br /><br />
+      Cada paso <strong>resalta la capa que se mueve</strong> y la gira con una
+      animación suave; el resto del cubo se queda quieto. Debajo tienes la
+      instrucción en español, la notación y los siguientes movimientos.
+    </td>
+  </tr>
+  <tr>
+    <td><img src="docs/assets/web/entrada.png" alt="Desarrollo plano clicable con paleta de seis colores y vista previa 3D del cubo" /></td>
+    <td><img src="docs/assets/web/giro.gif" alt="Animación de un giro U: solo gira la capa superior, el resto del cubo permanece inmóvil" /></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/assets/web/final.png" width="760" alt="Pantalla final: el cubo aparece resuelto, con las seis caras de un solo color, y el botón para resolver otro cubo" />
+  <br />
+  <sub>Al terminar la secuencia la animación deja el cubo resuelto: seis caras de un solo color.</sub>
+</p>
+
+### Qué puedes hacer
+
+- **Pintar a mano** las 54 pegatinas, con validación de colores y centros.
+- **Seguir la solución** paso a paso, con la capa activa resaltada y la
+  instrucción física escrita («Gira la cara izquierda 180 grados, mirándola de
+  frente»).
+- **Repetir, pausar y cambiar el ritmo** de cada giro; la animación nunca avanza
+  el paso por su cuenta: lo confirmas tú.
+- **Cambiar de punto de vista** entre cuatro cámaras para entender los giros de
+  la cara trasera o inferior.
+- **Cargar un ejemplo** y recorrer la guía completa sin tener el cubo delante.
+- **Usarlo desde el móvil, la tablet o el portátil**: es responsive y no necesita
+  cuenta ni conexión después de cargar.
+
+| Tecla | Acción |
+|---|---|
+| `ESPACIO` / `→` | Siguiente movimiento |
+| `←` | Movimiento anterior |
+| `R` | Repetir la animación del giro |
+| `P` | Pausar o reanudar |
+| `V` | Cambiar el punto de vista |
+
+### Cómo está hecho
+
+El estudio es una aplicación estática (React + TypeScript + Vite) que despliega
+solo la carpeta [`web/`](web/README.md). Kociemba se ejecuta dentro de un **Web
+Worker** con [`cubejs`](https://github.com/akheron/cubejs) (MIT), así que la
+interfaz nunca se congela y el cálculo es local. El cubo 3D se dibuja en un
+`canvas` con la misma geometría que el modelo lógico: la matriz de giro se aplica
+**solo a la capa del movimiento**, y una prueba automática comprueba movimiento a
+movimiento que la animación coincide con la permutación. La guía visual del
+proyecto está en [`web/DESIGN.md`](web/DESIGN.md).
+
+```bash
+cd web
+npm install
+npm run dev        # http://127.0.0.1:5173
+npm test           # 6 pruebas de geometría y animación
+```
+
+Despliegue propio en Vercel: `npx vercel --prod` dentro de `web/`
+(véase [`web/README.md`](web/README.md)).
 
 ## Vista previa
 
-**Una interfaz que deja ver lo importante.** Encuadre limpio, lectura de las
-nueve celdas, orientación de referencia y una instrucción por movimiento.
+**La app de escritorio, con cámara.** Una interfaz que deja ver lo importante:
+encuadre limpio, lectura de las nueve celdas, orientación de referencia y una
+instrucción por movimiento.
 
 <table>
   <tr>

@@ -68,6 +68,8 @@ Los colores de las pegatinas son los estándar: blanco `#f8fafc`, amarillo
 - Dos columnas desde 980 px; una columna por debajo.
 - La vista previa del cubo sube arriba en móvil.
 - Cada pegatina tiene `aria-label` con cara, fila, columna y color.
+- Los errores de validación nombran los colores («esquina amarillo-verde-azul»),
+  no índices ni códigos internos.
 - Los botones desactivados conservan contraste pero indican estado.
 - `prefers-reduced-motion` reduce animaciones y transiciones a casi cero.
 

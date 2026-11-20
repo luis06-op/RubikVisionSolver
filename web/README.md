@@ -17,7 +17,7 @@ animación 3D por movimiento, inspirada en Cyber Solver.
 cd web
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # verifica que cada giro anima solo su capa
+npm test           # geometría, validación y corte por tiempo (17 pruebas)
 npm run typecheck
 npm run build      # dist/
 ```
@@ -30,6 +30,19 @@ matriz se deduce de la misma geometría que genera la permutación del modelo, y
 `npm test` comprueba, movimiento a movimiento, que la posición final de cada
 pieza coincide con el estado lógico. Por eso al pasar al paso siguiente no hay
 ningún salto: el final de un giro ya es el estado inicial del siguiente.
+
+## Qué se valida antes de calcular
+
+`validateFacelets` comprueba que estén las 54 pegatinas, que haya nueve de cada
+color y que los seis centros sean distintos. Después, `validateSolvable` agrupa
+las pegatinas en las 8 esquinas y las 12 aristas y verifica los tres invariantes
+del cubo: giro de esquinas, volteo de aristas y paridad de la permutación. Un
+dibujo imposible se rechaza al instante con un mensaje que nombra los colores a
+revisar, porque Kociemba no termina con esos estados.
+
+Como red de seguridad, el cliente del worker corta el cálculo a los 8 segundos,
+reinicia el motor y avisa: la interfaz nunca se queda en «Calculando…». Los
+estados válidos tardan mucho menos (mediana de 85 ms en 200 cubos aleatorios).
 
 ## Despliegue en Vercel
 

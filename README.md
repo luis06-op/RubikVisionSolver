@@ -112,11 +112,14 @@ que instalar nada, no se sube ninguna foto y los colores no salen de tu equipo.
 El estudio es una aplicación estática (React + TypeScript + Vite) que despliega
 solo la carpeta [`web/`](web/README.md). Kociemba se ejecuta dentro de un **Web
 Worker** con [`cubejs`](https://github.com/akheron/cubejs) (MIT), así que la
-interfaz nunca se congela y el cálculo es local. El cubo 3D se dibuja en un
-`canvas` con la misma geometría que el modelo lógico: la matriz de giro se aplica
-**solo a la capa del movimiento**, y una prueba automática comprueba movimiento a
-movimiento que la animación coincide con la permutación. La guía visual del
-proyecto está en [`web/DESIGN.md`](web/DESIGN.md).
+interfaz nunca se congela y el cálculo es local. Antes de resolver se comprueba
+que el dibujo sea un cubo físicamente posible (giros, volteos y paridad) y un
+límite de tiempo corta el cálculo si algo no cuadra, así que nunca se queda en
+«Calculando…». El cubo 3D se dibuja en un `canvas` con la misma geometría que el
+modelo lógico: la matriz de giro se aplica **solo a la capa del movimiento**, y
+una prueba automática comprueba movimiento a movimiento que la animación
+coincide con la permutación. La guía visual del proyecto está en
+[`web/DESIGN.md`](web/DESIGN.md).
 
 ```bash
 cd web

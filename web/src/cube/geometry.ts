@@ -21,7 +21,8 @@ const MOVE_GEOMETRY: Record<Face, [number, number, number]> = {
   F: [2, 1, 3], B: [2, -1, 1],
 };
 
-function stickerPoint(face: Face, row: number, col: number): Vec3 {
+/** Coordenada 3D discreta del centro de una pegatina (reutilizada por la validación). */
+export function stickerPoint(face: Face, row: number, col: number): Vec3 {
   switch (face) {
     case "F": return [col - 1, 1 - row, 1];
     case "R": return [1, 1 - row, 1 - col];
@@ -32,7 +33,8 @@ function stickerPoint(face: Face, row: number, col: number): Vec3 {
   }
 }
 
-function normal(face: Face): Vec3 {
+/** Normal unitaria de una cara (reutilizada por la validación). */
+export function normal(face: Face): Vec3 {
   const [axis, sign] = ORIENT[face];
   const vector: Vec3 = [0, 0, 0];
   vector[axis] = sign;

@@ -14,7 +14,7 @@ import {
   type Facelets,
   type Move,
 } from "./cube/types";
-import { emptyFacelets, validateFacelets } from "./cube/validation";
+import { emptyFacelets, validateFacelets, validateSolvable } from "./cube/validation";
 
 const VIEW_NAMES = ["Frontal / derecha", "Frontal / izquierda", "Trasera", "Inferior"];
 const SOLVED: Facelets = FACES.flatMap((face) =>
@@ -53,9 +53,11 @@ export default function App() {
   }, []);
 
   const validation = useMemo(() => validateFacelets(facelets), [facelets]);
+  const solvability = useMemo(() => validateSolvable(facelets), [facelets]);
   const painted = validation.painted;
 
   const paint = useCallback((position: number) => {
+    setError("");
     setFacelets((current) => {
       const next = [...current];
       next[position] = selected;
@@ -71,6 +73,10 @@ export default function App() {
   const solve = async () => {
     if (!validation.valid || !clientRef.current) {
       setError(validation.errors[0] ?? "El solucionador no está listo.");
+      return;
+    }
+    if (!solvability.solvable) {
+      setError(solvability.errors[0] ?? "Ese cubo no se puede resolver: revisa los colores.");
       return;
     }
     setSolving(true);
@@ -189,6 +195,11 @@ export default function App() {
               {!validation.valid && painted === 54 && (
                 <ul className="error-list">
                   {validation.errors.map((message) => <li key={message}>{message}</li>)}
+                </ul>
+              )}
+              {validation.valid && !solvability.solvable && (
+                <ul className="error-list">
+                  {solvability.errors.map((message) => <li key={message}>{message}</li>)}
                 </ul>
               )}
               <p className="fine-print">
